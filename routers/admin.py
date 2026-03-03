@@ -18,7 +18,7 @@ from aiogram.types import (
 from config import Settings
 from db.database import Database
 from db.queries import KeywordQueries, SpamLogQueries, UserQueries
-from services.moderation import _apply_punishment, handle_spam
+from services.moderation import _apply_punishment, ban_keyboard, handle_spam
 from services.spam_detector import DetectionResult, SpamDetector
 from utils import auto_delete_message, is_admin
 
@@ -520,6 +520,36 @@ async def on_not_spam_vote(
         await _update_vote_message(bot, vote)
 
 
+@router.callback_query(F.data.startswith("ab:"))
+async def on_admin_ban(
+    callback: CallbackQuery, bot: Bot, db: Database,
+) -> None:
+    """Instant ban button from admin notification messages."""
+    if not callback.data or not callback.from_user or not callback.message:
+        return
+
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        return
+
+    chat_id, user_id = int(parts[1]), int(parts[2])
+
+    try:
+        await bot.ban_chat_member(chat_id=chat_id, user_id=user_id, revoke_messages=True)
+        await UserQueries(db).set_banned(user_id)
+    except Exception as e:
+        await callback.answer(f"Не вдалось забанити: {e}")
+        return
+
+    await callback.answer("Забанено назавжди")
+    # Remove the button from the message
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    logger.info("admin_instant_ban", user_id=user_id, by=callback.from_user.id)
+
+
 async def _update_vote_message(bot: Bot, vote: SpamVote) -> None:
     try:
         await bot.edit_message_text(
@@ -579,6 +609,7 @@ async def _execute_community_spam(
         user_display = f"@{escape(vote.target_username)} ({name}, ID: {vote.target_user_id})"
     else:
         user_display = f"{name} (ID: {vote.target_user_id})"
+    keyboard = ban_keyboard(vote.chat_id, vote.target_user_id) if action == "muted" else None
     try:
         await bot.send_message(
             chat_id=config.admin_chat_id,
@@ -589,6 +620,7 @@ async def _execute_community_spam(
                 f"🗳 Голосів: {len(vote.voters)}\n"
                 f"⚡ Дія: {action_text}"
             ),
+            reply_markup=keyboard,
         )
     except Exception:
         logger.warning("admin_vote_notify_failed")

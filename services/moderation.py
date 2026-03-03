@@ -8,7 +8,13 @@ from html import escape
 import structlog
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import ChatPermissions, Message, User
+from aiogram.types import (
+    ChatPermissions,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    User,
+)
 
 from config import Settings
 from db.database import Database
@@ -81,7 +87,7 @@ async def handle_spam(
     )
 
     # Notify admin chat
-    await _notify_admin_spam(bot, config, user, result, action_text)
+    await _notify_admin_spam(bot, config, chat_id, user, result, action, action_text)
 
     logger.info(
         "spam_action_taken",
@@ -158,11 +164,23 @@ async def _apply_punishment(
         return "deleted", "тільки видалення (не вдалось обмежити)"
 
 
+def ban_keyboard(chat_id: int, user_id: int) -> InlineKeyboardMarkup:
+    """Inline keyboard with a 'Ban' button for admin notifications."""
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="🚫 Забанити назавжди",
+            callback_data=f"ab:{chat_id}:{user_id}",
+        ),
+    ]])
+
+
 async def _notify_admin_spam(
     bot: Bot,
     config: Settings,
+    chat_id: int,
     user: User,
     result: DetectionResult,
+    action: str,
     action_text: str,
 ) -> None:
     """Send spam report to admin chat."""
@@ -175,6 +193,7 @@ async def _notify_admin_spam(
         )
 
     caption_display = escape(result.caption_text[:200]) if result.caption_text else "—"
+    keyboard = ban_keyboard(chat_id, user.id) if action == "muted" else None
 
     try:
         await bot.send_message(
@@ -188,6 +207,7 @@ async def _notify_admin_spam(
                 f"{gemini_line}\n"
                 f"⚡ Дія: {action_text}"
             ),
+            reply_markup=keyboard,
         )
     except Exception:
         logger.warning("admin_notify_failed")
