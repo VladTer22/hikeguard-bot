@@ -1,0 +1,11 @@
+.env
+.venv/
+data/
+__pycache__/
+*.pyc
+*.pyo
+.ruff_cache/
+.mypy_cache/
+examples/
+BEST_PRACTICES.md
+DEVELOPMENT_PLAN.md
