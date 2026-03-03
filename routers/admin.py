@@ -75,6 +75,12 @@ async def _check_admin(message: Message, bot: Bot) -> bool:
     return await is_admin(bot, message.chat.id, message.from_user.id)
 
 
+def _schedule_delete(bot: Bot, chat_id: int, *message_ids: int, delay: int) -> None:
+    """Schedule auto-deletion for one or more messages."""
+    for mid in message_ids:
+        asyncio.create_task(auto_delete_message(bot, chat_id, mid, delay))
+
+
 @router.message(Command("chatid"))
 async def cmd_chatid(message: Message) -> None:
     if not message.from_user:
@@ -94,9 +100,7 @@ async def cmd_trust(message: Message, bot: Bot, db: Database) -> None:
         reply = await message.reply(
             "Використання: /trust — відповіддю на повідомлення користувача"
         )
-        asyncio.create_task(
-            auto_delete_message(bot, message.chat.id, reply.message_id, 30)
-        )
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
         return
 
     target = message.reply_to_message.from_user
@@ -110,11 +114,34 @@ async def cmd_trust(message: Message, bot: Bot, db: Database) -> None:
 
     display = f"@{target.username}" if target.username else f"ID:{target.id}"
     reply = await message.reply(f"✅ {display} тепер довірений учасник")
-    asyncio.create_task(
-        auto_delete_message(bot, message.chat.id, reply.message_id, 30)
-    )
+    _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
     logger.info(
         "admin_trust_applied",
+        target_user_id=target.id,
+        by=message.from_user.id,
+    )
+
+
+@router.message(Command("untrust"))
+async def cmd_untrust(message: Message, bot: Bot, db: Database) -> None:
+    if not await _check_admin(message, bot):
+        return
+
+    if not message.reply_to_message or not message.reply_to_message.from_user:
+        reply = await message.reply(
+            "Використання: /untrust — відповіддю на повідомлення користувача"
+        )
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+        return
+
+    target = message.reply_to_message.from_user
+    await UserQueries(db).set_untrusted(target.id)
+
+    display = f"@{target.username}" if target.username else f"ID:{target.id}"
+    reply = await message.reply(f"❌ {display} більше не довірений учасник")
+    _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+    logger.info(
+        "admin_untrust_applied",
         target_user_id=target.id,
         by=message.from_user.id,
     )
@@ -132,17 +159,13 @@ async def cmd_spam(
         reply = await message.reply(
             "Використання: /spam — відповіддю на спам-повідомлення"
         )
-        asyncio.create_task(
-            auto_delete_message(bot, message.chat.id, reply.message_id, 30)
-        )
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
         return
 
     # Don't act on admins
     if await is_admin(bot, message.chat.id, target_msg.from_user.id):
         reply = await message.reply("Не можна застосувати до адміністратора")
-        asyncio.create_task(
-            auto_delete_message(bot, message.chat.id, reply.message_id, 30)
-        )
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
         return
 
     # Delete the /spam command message itself
@@ -379,9 +402,7 @@ async def cmd_status(message: Message, bot: Bot, db: Database) -> None:
     )
 
     reply = await message.reply(text)
-    asyncio.create_task(
-        auto_delete_message(bot, message.chat.id, reply.message_id, 60)
-    )
+    _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=60)
 
 
 @router.message(Command("spam_words"))
@@ -404,9 +425,7 @@ async def cmd_spam_words(message: Message, bot: Bot, db: Database) -> None:
             )
         reply = await message.reply("\n".join(lines))
 
-    asyncio.create_task(
-        auto_delete_message(bot, message.chat.id, reply.message_id, 60)
-    )
+    _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=60)
 
 
 @router.message(Command("add_word"))
@@ -421,9 +440,7 @@ async def cmd_add_word(
         reply = await message.reply(
             "Використання: /add_word <слово> [бали]\nБали за замовчуванням: 3"
         )
-        asyncio.create_task(
-            auto_delete_message(bot, message.chat.id, reply.message_id, 30)
-        )
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
         return
 
     word = args[1].lower()
@@ -433,18 +450,14 @@ async def cmd_add_word(
             score = int(args[2])
         except ValueError:
             reply = await message.reply("Бали повинні бути числом")
-            asyncio.create_task(
-                auto_delete_message(bot, message.chat.id, reply.message_id, 30)
-            )
+            _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
             return
 
     await KeywordQueries(db).add(word, score, message.from_user.id)
     await spam_detector.scorer.reload_custom_keywords()
 
     reply = await message.reply(f"✅ Додано: <code>{escape(word)}</code> — {score} балів")
-    asyncio.create_task(
-        auto_delete_message(bot, message.chat.id, reply.message_id, 30)
-    )
+    _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
     logger.info("keyword_added", word=word, score=score, by=message.from_user.id)
 
 
@@ -458,9 +471,7 @@ async def cmd_remove_word(
     args = (message.text or "").split(maxsplit=1)
     if len(args) < 2:
         reply = await message.reply("Використання: /remove_word <слово>")
-        asyncio.create_task(
-            auto_delete_message(bot, message.chat.id, reply.message_id, 30)
-        )
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
         return
 
     word = args[1].lower()
@@ -475,6 +486,4 @@ async def cmd_remove_word(
             f"Слово <code>{escape(word)}</code> не знайдено в кастомних"
         )
 
-    asyncio.create_task(
-        auto_delete_message(bot, message.chat.id, reply.message_id, 30)
-    )
+    _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)

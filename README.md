@@ -51,13 +51,14 @@ Gemini is optional — the bot works in keywords-only mode without an API key.
 |---|---|
 | `/spam` | Mark as spam: instant for admins, community vote (5 votes) for regular users |
 | `/trust` | Remove quarantine restrictions from a user (reply to their message) |
+| `/untrust` | Revoke trusted status — user goes back to full spam checks (reply to their message) |
 | `/status` | Spam statistics: 24h, 7 days, all time, top detection methods |
 | `/spam_words` | List all custom keywords with scores |
 | `/add_word <word> [score]` | Add a custom keyword (default score: 3) |
 | `/remove_word <word>` | Remove a custom keyword |
 | `/chatid` | Show current chat ID and your user ID |
 
-All admin commands work only for chat administrators. Service replies are auto-deleted.
+All admin commands work only for chat administrators (`/spam` also works for regular users via voting). Command messages and bot replies are auto-deleted to keep the chat clean.
 
 ## Setup
 

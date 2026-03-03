@@ -54,6 +54,13 @@ class UserQueries:
         )
         await self._db.db.commit()
 
+    async def set_untrusted(self, user_id: int) -> None:
+        await self._db.db.execute(
+            "UPDATE users SET is_trusted = 0 WHERE user_id = ?",
+            (user_id,),
+        )
+        await self._db.db.commit()
+
     async def set_banned(self, user_id: int) -> None:
         await self._db.db.execute(
             "UPDATE users SET is_banned = 1 WHERE user_id = ?", (user_id,)
