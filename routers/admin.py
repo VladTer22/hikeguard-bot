@@ -179,8 +179,8 @@ async def cmd_mute(message: Message, bot: Bot) -> None:
             _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
             return
 
-    if minutes < 1:
-        reply = await message.reply("Мінімум 1 хвилина")
+    if minutes < 1 or minutes > 525600:
+        reply = await message.reply("Від 1 хвилини до 365 днів (525600)")
         _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
         return
 
