@@ -33,12 +33,12 @@ async def handle_spam(
 
     # Delete the spam message
     try:
-        result = await message.delete()
+        deleted = await message.delete()
         logger.info(
             "message_delete_result",
             message_id=message.message_id,
             chat_id=chat_id,
-            result=result,
+            result=deleted,
         )
     except Exception as e:
         logger.warning(

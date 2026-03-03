@@ -168,6 +168,10 @@ async def cmd_spam(
         return
 
     # Non-admin — start or join a vote
+    # Can't report your own message
+    if message.from_user.id == target_msg.from_user.id:
+        return
+
     _cleanup_stale_votes()
     key = _vote_key(message.chat.id, target_msg.message_id)
 
@@ -286,15 +290,6 @@ async def _execute_community_spam(
         await bot.delete_message(vote.chat_id, vote.vote_message_id)
     except Exception:
         pass
-
-    # Build a minimal Message-like target for handle_spam
-    # We need to delete the original message and punish the user
-    result = DetectionResult(
-        is_spam=True,
-        score=0,
-        method="community_vote",
-        caption_text=vote.target_text,
-    )
 
     # Delete target message
     try:
