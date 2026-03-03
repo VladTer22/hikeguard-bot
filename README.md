@@ -49,6 +49,7 @@ Gemini is optional — the bot works in keywords-only mode without an API key.
 
 | Command | Description |
 |---|---|
+| `/spam` | Manually mark a message as spam (reply to the message) |
 | `/trust` | Remove quarantine restrictions from a user (reply to their message) |
 | `/status` | Spam statistics: 24h, 7 days, all time, top detection methods |
 | `/spam_words` | List all custom keywords with scores |

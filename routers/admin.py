@@ -6,9 +6,11 @@ from aiogram import Bot, Router
 from aiogram.filters import Command
 from aiogram.types import ChatPermissions, Message
 
+from config import Settings
 from db.database import Database
 from db.queries import KeywordQueries, SpamLogQueries, UserQueries
-from services.spam_detector import SpamDetector
+from services.moderation import handle_spam
+from services.spam_detector import DetectionResult, SpamDetector
 from utils import auto_delete_message, is_admin
 
 logger = structlog.get_logger()
@@ -76,6 +78,52 @@ async def cmd_trust(message: Message, bot: Bot, db: Database) -> None:
     logger.info(
         "admin_trust_applied",
         target_user_id=target.id,
+        by=message.from_user.id,
+    )
+
+
+@router.message(Command("spam"))
+async def cmd_spam(
+    message: Message, bot: Bot, db: Database, config: Settings,
+) -> None:
+    if not await _check_admin(message, bot):
+        return
+
+    target_msg = message.reply_to_message
+    if not target_msg or not target_msg.from_user:
+        reply = await message.reply(
+            "Використання: /spam — відповіддю на спам-повідомлення"
+        )
+        asyncio.create_task(
+            auto_delete_message(bot, message.chat.id, reply.message_id, 30)
+        )
+        return
+
+    # Don't act on admins
+    if await is_admin(bot, message.chat.id, target_msg.from_user.id):
+        reply = await message.reply("Не можна застосувати до адміністратора")
+        asyncio.create_task(
+            auto_delete_message(bot, message.chat.id, reply.message_id, 30)
+        )
+        return
+
+    # Delete the /spam command message itself
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    result = DetectionResult(
+        is_spam=True,
+        score=0,
+        method="manual",
+        caption_text=target_msg.text or target_msg.caption,
+    )
+    await handle_spam(target_msg, bot, db, config, result)
+
+    logger.info(
+        "admin_manual_spam",
+        target_user_id=target_msg.from_user.id,
         by=message.from_user.id,
     )
 
