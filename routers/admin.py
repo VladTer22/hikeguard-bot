@@ -83,13 +83,14 @@ def _schedule_delete(bot: Bot, chat_id: int, *message_ids: int, delay: int) -> N
 
 
 @router.message(Command("chatid"))
-async def cmd_chatid(message: Message) -> None:
-    if not message.from_user:
+async def cmd_chatid(message: Message, bot: Bot) -> None:
+    if not await _check_admin(message, bot):
         return
-    await message.reply(
+    reply = await message.reply(
         f"Chat ID: <code>{message.chat.id}</code>\n"
         f"Your ID: <code>{message.from_user.id}</code>"
     )
+    _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
 
 
 @router.message(Command("trust"))
