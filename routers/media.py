@@ -2,7 +2,7 @@ from io import BytesIO
 
 import structlog
 from aiogram import Bot, F, Router
-from aiogram.types import Message
+from aiogram.types import Message, PhotoSize
 
 from config import Settings
 from db.database import Database
@@ -14,25 +14,14 @@ logger = structlog.get_logger()
 router = Router(name="media")
 
 
-@router.message(F.photo)
-async def handle_photo(
+async def _check_media_spam(
     message: Message,
     bot: Bot,
     db: Database,
     spam_detector: SpamDetector,
     config: Settings,
+    photo: PhotoSize,
 ) -> None:
-    if not message.from_user or not message.chat:
-        return
-
-    if message.chat.type == "private":
-        return
-
-    if await is_admin(bot, message.chat.id, message.from_user.id):
-        return
-
-    photo = message.photo[-1]
-
     file = await bot.get_file(photo.file_id)
     if not file.file_path:
         return
@@ -50,3 +39,43 @@ async def handle_photo(
         await handle_spam(message, bot, db, config, result)
     elif result.flag_for_admin:
         await notify_admins_uncertain(message, bot, config, result)
+
+
+@router.message(F.photo)
+async def handle_photo(
+    message: Message,
+    bot: Bot,
+    db: Database,
+    spam_detector: SpamDetector,
+    config: Settings,
+) -> None:
+    if not message.from_user or not message.chat:
+        return
+    if message.chat.type == "private":
+        return
+    if await is_admin(bot, message.chat.id, message.from_user.id):
+        return
+
+    await _check_media_spam(message, bot, db, spam_detector, config, message.photo[-1])
+
+
+@router.message(F.animation)
+async def handle_animation(
+    message: Message,
+    bot: Bot,
+    db: Database,
+    spam_detector: SpamDetector,
+    config: Settings,
+) -> None:
+    if not message.from_user or not message.chat:
+        return
+    if message.chat.type == "private":
+        return
+    if await is_admin(bot, message.chat.id, message.from_user.id):
+        return
+    if not message.animation or not message.animation.thumbnail:
+        return
+
+    await _check_media_spam(
+        message, bot, db, spam_detector, config, message.animation.thumbnail,
+    )

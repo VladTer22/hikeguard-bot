@@ -34,7 +34,7 @@ Additional scoring sources:
 - Longer phrases are matched first to avoid double-counting
 
 **Layer 3 — Gemini Vision**
-Photos that pass keyword scoring are sent to Google Gemini for visual spam classification. Results are cached by `file_unique_id` to avoid duplicate API calls. If Gemini confidence is below 70%, the message is forwarded to admins for manual review instead of auto-deletion.
+Photos and GIF thumbnails that pass keyword scoring are sent to Google Gemini for visual spam classification. Results are cached by `file_unique_id` to avoid duplicate API calls. If Gemini confidence is below 70%, the message is forwarded to admins for manual review instead of auto-deletion.
 
 Gemini is optional — the bot works in keywords-only mode without an API key.
 
