@@ -164,12 +164,16 @@ async def _apply_punishment(
         return "deleted", "тільки видалення (не вдалось обмежити)"
 
 
-def ban_keyboard(chat_id: int, user_id: int) -> InlineKeyboardMarkup:
-    """Inline keyboard with a 'Ban' button for admin notifications."""
+def mute_action_keyboard(chat_id: int, user_id: int) -> InlineKeyboardMarkup:
+    """Inline keyboard with Ban and Unmute buttons for admin notifications."""
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
-            text="🚫 Забанити назавжди",
+            text="🚫 Забанити",
             callback_data=f"ab:{chat_id}:{user_id}",
+        ),
+        InlineKeyboardButton(
+            text="🔊 Розмутити",
+            callback_data=f"au:{chat_id}:{user_id}",
         ),
     ]])
 
@@ -193,7 +197,7 @@ async def _notify_admin_spam(
         )
 
     caption_display = escape(result.caption_text[:200]) if result.caption_text else "—"
-    keyboard = ban_keyboard(chat_id, user.id) if action == "muted" else None
+    keyboard = mute_action_keyboard(chat_id, user.id) if action == "muted" else None
 
     try:
         await bot.send_message(
