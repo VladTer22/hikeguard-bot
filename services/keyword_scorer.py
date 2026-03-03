@@ -61,6 +61,17 @@ BUILTIN_KEYWORDS: dict[str, int] = {
     "hr-manager": 3,
     "hr manager": 3,
     "we are hiring": 4,
+    # --- Крипто/P2P скам ---
+    "p2p": 2,
+    # "бірж" → біржі, біржа, біржу
+    "бірж": 2,
+    # "бирж" → биржи, биржа, биржу
+    "бирж": 2,
+    # "схем" → схеми, схема, схему
+    "схем": 2,
+    "безкоштовно": 2,
+    "купівля / продаж": 3,
+    "купівля/продаж": 3,
     # --- Казино/скам ---
     "вы выиграли": 5,
     "поздравляем": 2,
@@ -87,6 +98,9 @@ REGEX_PATTERNS: list[tuple[str, int, str]] = [
     (r"(?:графік|график)\s*:?\s*\d\s*/\s*\d", 2, "work_schedule"),
     (r"\d\/\d\s*,?\s*\d{1,2}:\d{2}\s*[-–]\s*\d{1,2}:\d{2}", 1, "work_schedule"),
     (r"@[a-zA-Z_]\w{4,}", 2, "telegram_username"),
+    # Telegram invite links — майже завжди спам в груповому чаті
+    (r"t\.me/\+[a-zA-Z0-9_-]+", 5, "telegram_invite"),
+    (r"t\.me/joinchat/[a-zA-Z0-9_-]+", 5, "telegram_invite"),
     (r"https?://\S+", 2, "url_link"),
     (r"(?:infinityfree|freehosting|000webhostapp)\.\w+", 5, "scam_domain"),
 ]
