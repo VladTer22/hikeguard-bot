@@ -95,7 +95,7 @@ python bot.py
 | `GEMINI_API_KEY` | — | Google Gemini API key (optional) |
 | `GEMINI_MODEL` | `gemini-3-flash-preview` | Gemini model for image classification |
 | `GEMINI_TIMEOUT` | `10` | Gemini API timeout in seconds |
-| `MUTE_DURATION_MINUTES` | `60` | Base mute duration in minutes (doubles each strike: 60m → 24h → …) |
+| `MUTE_DURATION_MINUTES` | `60` | Base mute duration in minutes (escalates ×24 per strike: 1h → 24h → …) |
 | `BAN_ON_STRIKE` | `3` | Ban on Nth spam strike (1 = instant ban, 2 = one mute then ban, 3 = two mutes then ban) |
 | `DB_PATH` | `data/hikeguard.db` | SQLite database path |
 
