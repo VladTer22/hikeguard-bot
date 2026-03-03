@@ -49,7 +49,8 @@ class UserQueries:
 
     async def set_trusted(self, user_id: int) -> None:
         await self._db.db.execute(
-            "UPDATE users SET is_trusted = 1 WHERE user_id = ?", (user_id,)
+            "UPDATE users SET is_trusted = 1, spam_strikes = 0 WHERE user_id = ?",
+            (user_id,),
         )
         await self._db.db.commit()
 
