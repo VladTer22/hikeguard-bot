@@ -33,9 +33,21 @@ async def handle_spam(
 
     # Delete the spam message
     try:
-        await message.delete()
-    except Exception:
-        logger.warning("message_delete_failed", message_id=message.message_id)
+        result = await message.delete()
+        logger.info(
+            "message_delete_result",
+            message_id=message.message_id,
+            chat_id=chat_id,
+            result=result,
+        )
+    except Exception as e:
+        logger.warning(
+            "message_delete_failed",
+            message_id=message.message_id,
+            chat_id=chat_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
     # Notify the chat (auto-delete after 30 sec)
     notice = await bot.send_message(chat_id=chat_id, text=random.choice(SPAM_REPLIES))
