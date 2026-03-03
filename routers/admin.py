@@ -155,6 +155,35 @@ async def cmd_untrust(message: Message, bot: Bot, db: Database) -> None:
     )
 
 
+@router.message(Command("unmute"))
+async def cmd_unmute(message: Message, bot: Bot) -> None:
+    if not await _check_admin(message, bot):
+        return
+
+    if not message.reply_to_message or not message.reply_to_message.from_user:
+        reply = await message.reply(
+            "Використання: /unmute — відповіддю на повідомлення користувача"
+        )
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+        return
+
+    target = message.reply_to_message.from_user
+    await bot.restrict_chat_member(
+        chat_id=message.chat.id,
+        user_id=target.id,
+        permissions=ALL_PERMISSIONS,
+    )
+
+    display = f"@{target.username}" if target.username else f"ID:{target.id}"
+    reply = await message.reply(f"🔊 {display} розмучено")
+    _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+    logger.info(
+        "admin_unmute",
+        target_user_id=target.id,
+        by=message.from_user.id,
+    )
+
+
 @router.message(Command("set_limit"))
 async def cmd_set_limit(
     message: Message, bot: Bot, db: Database, config: Settings,
