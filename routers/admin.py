@@ -1,6 +1,7 @@
 import asyncio
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from html import escape
 
 import structlog
@@ -151,6 +152,53 @@ async def cmd_untrust(message: Message, bot: Bot, db: Database) -> None:
     logger.info(
         "admin_untrust_applied",
         target_user_id=target.id,
+        by=message.from_user.id,
+    )
+
+
+@router.message(Command("mute"))
+async def cmd_mute(message: Message, bot: Bot) -> None:
+    if not await _check_admin(message, bot):
+        return
+
+    if not message.reply_to_message or not message.reply_to_message.from_user:
+        reply = await message.reply(
+            "Використання: /mute <хвилин> — відповіддю на повідомлення"
+        )
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+        return
+
+    args = (message.text or "").split(maxsplit=1)
+    minutes = 60
+    if len(args) >= 2:
+        try:
+            minutes = int(args[1])
+        except ValueError:
+            reply = await message.reply("Кількість хвилин повинна бути числом")
+            _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+            return
+
+    if minutes < 1:
+        reply = await message.reply("Мінімум 1 хвилина")
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+        return
+
+    target = message.reply_to_message.from_user
+    until = datetime.now(tz=UTC) + timedelta(minutes=minutes)
+    await bot.restrict_chat_member(
+        chat_id=message.chat.id,
+        user_id=target.id,
+        permissions=ChatPermissions(can_send_messages=False),
+        until_date=until,
+    )
+
+    display = f"@{target.username}" if target.username else f"ID:{target.id}"
+    reply = await message.reply(f"🔇 {display} замучено на {minutes} хв")
+    _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+    logger.info(
+        "admin_mute",
+        target_user_id=target.id,
+        minutes=minutes,
         by=message.from_user.id,
     )
 
