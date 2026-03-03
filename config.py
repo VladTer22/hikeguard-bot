@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     # Moderation
     mute_duration_minutes: int = 60
     ban_on_strike: int = 2
-    auto_delete_service_sec: int = 300
 
     # Database
     db_path: str = "data/hikeguard.db"

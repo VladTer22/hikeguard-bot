@@ -41,7 +41,7 @@ Gemini is optional — the bot works in keywords-only mode without an API key.
 ## Moderation actions
 
 - First spam strike — message deleted, user muted for 60 minutes
-- Second strike — permanent ban with message history revocation
+- Second strike — permanent ban with message history revocation (configurable per-user via `/set_limit`)
 - Every action is logged to the database and reported to the admin chat with details (score, method, matched keywords, Gemini reason)
 - A random Ukrainian-language reply is posted in the chat when spam is deleted (auto-deleted after 30 seconds)
 
@@ -50,7 +50,7 @@ Gemini is optional — the bot works in keywords-only mode without an API key.
 | Command | Description |
 |---|---|
 | `/spam` | Mark as spam: instant for admins, community vote (5 votes) for regular users |
-| `/trust` | Remove quarantine restrictions from a user (reply to their message) |
+| `/trust` | Mark user as trusted: removes quarantine, resets strikes, photos skip Gemini (reply to their message) |
 | `/untrust` | Revoke trusted status — user goes back to full spam checks (reply to their message) |
 | `/mute [minutes]` | Mute a user for N minutes, default 60 (reply to their message) |
 | `/unmute` | Remove mute from a user without changing anything else (reply to their message) |
@@ -95,8 +95,7 @@ python bot.py
 | `GEMINI_MODEL` | `gemini-3-flash-preview` | Gemini model for image classification |
 | `GEMINI_TIMEOUT` | `10` | Gemini API timeout in seconds |
 | `MUTE_DURATION_MINUTES` | `60` | Mute duration on first spam strike |
-| `BAN_ON_STRIKE` | `2` | Number of strikes before permanent ban |
-| `AUTO_DELETE_SERVICE_SEC` | `300` | Auto-delete service messages after N seconds |
+| `BAN_ON_STRIKE` | `2` | Ban on Nth spam strike (1 = instant ban, 2 = one mute then ban) |
 | `DB_PATH` | `data/hikeguard.db` | SQLite database path |
 
 ## Tech stack
