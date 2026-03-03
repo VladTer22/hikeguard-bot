@@ -136,16 +136,22 @@ async def _apply_punishment(
             await users.set_banned(user_id)
             return "banned", f"бан (strike {strikes}/{ban_threshold})"
 
-        until = datetime.now(tz=UTC) + timedelta(minutes=config.mute_duration_minutes)
+        base = config.mute_duration_minutes
+        mute_minutes = base * (24 ** (strikes - 1))  # 60 → 1440 → ...
+        until = datetime.now(tz=UTC) + timedelta(minutes=mute_minutes)
         await bot.restrict_chat_member(
             chat_id=chat_id,
             user_id=user_id,
             permissions=ChatPermissions(can_send_messages=False),
             until_date=until,
         )
+        if mute_minutes >= 1440:
+            duration_text = f"{mute_minutes // 1440} д"
+        else:
+            duration_text = f"{mute_minutes} хв"
         return (
             "muted",
-            f"мут {config.mute_duration_minutes} хв (strike {strikes}/{ban_threshold})",
+            f"мут {duration_text} (strike {strikes}/{ban_threshold})",
         )
     except TelegramBadRequest as e:
         logger.warning("punish_failed", user_id=user_id, error=str(e))
