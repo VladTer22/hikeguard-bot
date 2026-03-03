@@ -1,4 +1,3 @@
-import asyncio
 from datetime import UTC, datetime, timedelta
 
 import structlog
@@ -9,7 +8,7 @@ from config import Settings
 from db.database import Database
 from db.queries import UserQueries
 from services.cas import CASChecker
-from utils import auto_delete_message, format_user
+from utils import format_user
 
 logger = structlog.get_logger()
 router = Router(name="new_member")
@@ -26,13 +25,6 @@ QUARANTINE_PERMISSIONS = ChatPermissions(
     can_send_video_notes=False,
 )
 
-WELCOME_TEXT = (
-    "Ласкаво просимо! 👋\n"
-    "Для захисту від спаму нові учасники можуть відправляти "
-    "тільки текстові повідомлення протягом перших {hours} годин.\n"
-    "Фото, відео та стікери стануть доступні автоматично."
-)
-
 
 @router.chat_member()
 async def on_chat_member_update(
@@ -44,7 +36,7 @@ async def on_chat_member_update(
 ) -> None:
     old = event.old_chat_member
     new = event.new_chat_member
-    if old.status in ("member", "administrator", "creator"):
+    if old.status in ("member", "administrator", "creator", "restricted"):
         return
     if new.status not in ("member", "restricted"):
         return
@@ -112,12 +104,4 @@ async def on_chat_member_update(
         "quarantine_applied",
         user_id=user.id,
         until=quarantine_until.isoformat(),
-    )
-
-    welcome = await bot.send_message(
-        chat_id=chat_id,
-        text=WELCOME_TEXT.format(hours=config.quarantine_hours),
-    )
-    asyncio.create_task(
-        auto_delete_message(bot, chat_id, welcome.message_id, config.auto_delete_service_sec)
     )
