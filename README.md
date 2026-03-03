@@ -52,6 +52,7 @@ Gemini is optional — the bot works in keywords-only mode without an API key.
 | `/spam` | Mark as spam: instant for admins, community vote (5 votes) for regular users |
 | `/trust` | Remove quarantine restrictions from a user (reply to their message) |
 | `/untrust` | Revoke trusted status — user goes back to full spam checks (reply to their message) |
+| `/set_limit <N>` | Set per-user mute limit before ban (reply to their message). `/set_limit reset` restores default |
 | `/status` | Spam statistics: 24h, 7 days, all time, top detection methods |
 | `/spam_words` | List all custom keywords with scores |
 | `/add_word <word> [score]` | Add a custom keyword (default score: 3) |

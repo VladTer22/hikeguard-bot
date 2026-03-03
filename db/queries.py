@@ -61,6 +61,23 @@ class UserQueries:
         )
         await self._db.db.commit()
 
+    async def get_ban_threshold(self, user_id: int, default: int) -> int:
+        """Per-user ban_on_strike or global default."""
+        cursor = await self._db.db.execute(
+            "SELECT ban_on_strike FROM users WHERE user_id = ?", (user_id,)
+        )
+        row = await cursor.fetchone()
+        if row and row["ban_on_strike"] is not None:
+            return row["ban_on_strike"]
+        return default
+
+    async def set_ban_on_strike(self, user_id: int, value: int | None) -> None:
+        await self._db.db.execute(
+            "UPDATE users SET ban_on_strike = ? WHERE user_id = ?",
+            (value, user_id),
+        )
+        await self._db.db.commit()
+
     async def set_banned(self, user_id: int) -> None:
         await self._db.db.execute(
             "UPDATE users SET is_banned = 1 WHERE user_id = ?", (user_id,)

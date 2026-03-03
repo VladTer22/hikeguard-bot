@@ -104,13 +104,17 @@ async def cmd_trust(message: Message, bot: Bot, db: Database) -> None:
         return
 
     target = message.reply_to_message.from_user
+    users = UserQueries(db)
+    await users.upsert_user(
+        user_id=target.id, username=target.username, full_name=target.full_name,
+    )
 
     await bot.restrict_chat_member(
         chat_id=message.chat.id,
         user_id=target.id,
         permissions=ALL_PERMISSIONS,
     )
-    await UserQueries(db).set_trusted(target.id)
+    await users.set_trusted(target.id)
 
     display = f"@{target.username}" if target.username else f"ID:{target.id}"
     reply = await message.reply(f"✅ {display} тепер довірений учасник")
@@ -135,7 +139,11 @@ async def cmd_untrust(message: Message, bot: Bot, db: Database) -> None:
         return
 
     target = message.reply_to_message.from_user
-    await UserQueries(db).set_untrusted(target.id)
+    users = UserQueries(db)
+    await users.upsert_user(
+        user_id=target.id, username=target.username, full_name=target.full_name,
+    )
+    await users.set_untrusted(target.id)
 
     display = f"@{target.username}" if target.username else f"ID:{target.id}"
     reply = await message.reply(f"❌ {display} більше не довірений учасник")
@@ -143,6 +151,67 @@ async def cmd_untrust(message: Message, bot: Bot, db: Database) -> None:
     logger.info(
         "admin_untrust_applied",
         target_user_id=target.id,
+        by=message.from_user.id,
+    )
+
+
+@router.message(Command("set_limit"))
+async def cmd_set_limit(
+    message: Message, bot: Bot, db: Database, config: Settings,
+) -> None:
+    if not await _check_admin(message, bot):
+        return
+
+    if not message.reply_to_message or not message.reply_to_message.from_user:
+        reply = await message.reply(
+            "Використання: /set_limit <мутів> — відповіддю на повідомлення\n"
+            "/set_limit reset — повернути до стандартного"
+        )
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+        return
+
+    args = (message.text or "").split(maxsplit=1)
+    if len(args) < 2:
+        reply = await message.reply(
+            "Використання: /set_limit <мутів> або /set_limit reset"
+        )
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+        return
+
+    target = message.reply_to_message.from_user
+    users = UserQueries(db)
+    await users.upsert_user(
+        user_id=target.id, username=target.username, full_name=target.full_name,
+    )
+    display = f"@{target.username}" if target.username else f"ID:{target.id}"
+
+    if args[1].strip().lower() == "reset":
+        await users.set_ban_on_strike(target.id, None)
+        default_mutes = config.ban_on_strike - 1
+        reply = await message.reply(
+            f"✅ {display} — ліміт скинуто до стандартного ({default_mutes} мут до бану)"
+        )
+    else:
+        try:
+            mutes = int(args[1])
+        except ValueError:
+            reply = await message.reply("Кількість мутів повинна бути числом")
+            _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+            return
+
+        if mutes < 1:
+            reply = await message.reply("Мінімум 1 мут до бану")
+            _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+            return
+
+        await users.set_ban_on_strike(target.id, mutes + 1)
+        reply = await message.reply(f"✅ {display} — {mutes} мутів до бану")
+
+    _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+    logger.info(
+        "admin_set_limit",
+        target_user_id=target.id,
+        value=args[1],
         by=message.from_user.id,
     )
 
@@ -328,9 +397,10 @@ async def _execute_community_spam(
         full_name=vote.target_full_name,
     )
     strikes = await users.increment_strikes(vote.target_user_id)
+    ban_threshold = await users.get_ban_threshold(vote.target_user_id, config.ban_on_strike)
 
     action, action_text = await _apply_punishment(
-        bot, users, config, vote.chat_id, vote.target_user_id, strikes,
+        bot, users, config, vote.chat_id, vote.target_user_id, strikes, ban_threshold,
     )
 
     await SpamLogQueries(db).log_spam(

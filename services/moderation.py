@@ -61,10 +61,11 @@ async def handle_spam(
         full_name=user.full_name,
     )
     strikes = await users.increment_strikes(user.id)
+    ban_threshold = await users.get_ban_threshold(user.id, config.ban_on_strike)
 
     # Punish: ban on threshold, mute otherwise
     action, action_text = await _apply_punishment(
-        bot, users, config, chat_id, user.id, strikes,
+        bot, users, config, chat_id, user.id, strikes, ban_threshold,
     )
 
     # Log to DB
@@ -124,15 +125,16 @@ async def _apply_punishment(
     chat_id: int,
     user_id: int,
     strikes: int,
+    ban_threshold: int,
 ) -> tuple[str, str]:
     """Apply mute or ban. Returns (action, action_text)."""
     try:
-        if strikes >= config.ban_on_strike:
+        if strikes >= ban_threshold:
             await bot.ban_chat_member(
                 chat_id=chat_id, user_id=user_id, revoke_messages=True,
             )
             await users.set_banned(user_id)
-            return "banned", f"бан (strike {strikes}/{config.ban_on_strike})"
+            return "banned", f"бан (strike {strikes}/{ban_threshold})"
 
         until = datetime.now(tz=UTC) + timedelta(minutes=config.mute_duration_minutes)
         await bot.restrict_chat_member(
@@ -143,7 +145,7 @@ async def _apply_punishment(
         )
         return (
             "muted",
-            f"мут {config.mute_duration_minutes} хв (strike {strikes}/{config.ban_on_strike})",
+            f"мут {config.mute_duration_minutes} хв (strike {strikes}/{ban_threshold})",
         )
     except TelegramBadRequest as e:
         logger.warning("punish_failed", user_id=user_id, error=str(e))

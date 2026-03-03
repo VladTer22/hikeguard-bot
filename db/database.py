@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
     quarantine_until TIMESTAMP,
     spam_strikes INTEGER DEFAULT 0,
     is_trusted INTEGER DEFAULT 0,
-    is_banned INTEGER DEFAULT 0
+    is_banned INTEGER DEFAULT 0,
+    ban_on_strike INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS spam_log (
@@ -59,8 +60,17 @@ class Database:
         self._db.row_factory = aiosqlite.Row
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.executescript(SCHEMA)
+        await self._migrate(self._db)
         await self._db.commit()
         logger.info("database_initialized", path=self.db_path)
+
+    @staticmethod
+    async def _migrate(db: aiosqlite.Connection) -> None:
+        """Add columns that don't exist yet (safe to re-run)."""
+        cursor = await db.execute("PRAGMA table_info(users)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "ban_on_strike" not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN ban_on_strike INTEGER")
 
     @property
     def db(self) -> aiosqlite.Connection:
