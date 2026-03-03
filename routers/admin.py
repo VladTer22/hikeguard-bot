@@ -39,7 +39,7 @@ ALL_PERMISSIONS = ChatPermissions(
 
 
 SPAM_VOTES_REQUIRED = 5
-_VOTE_TTL = 3600  # 1 hour
+_VOTE_TTL = 600  # 10 minutes
 
 @dataclass
 class SpamVote:
@@ -51,6 +51,7 @@ class SpamVote:
     target_text: str | None
     vote_message_id: int
     voters: set[int] = field(default_factory=set)
+    not_spam_voters: set[int] = field(default_factory=set)
     created_at: float = field(default_factory=time.monotonic)
 
 # key: "chat_id:target_message_id"
@@ -66,6 +67,54 @@ def _cleanup_stale_votes() -> None:
     stale = [k for k, v in _active_votes.items() if now - v.created_at > _VOTE_TTL]
     for k in stale:
         del _active_votes[k]
+
+
+def _build_vote_keyboard(vote: SpamVote) -> InlineKeyboardMarkup:
+    spam_count = len(vote.voters)
+    not_spam_count = len(vote.not_spam_voters)
+    cb = f"{vote.chat_id}:{vote.target_message_id}"
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text=f"🚫 Спам ({spam_count}/{SPAM_VOTES_REQUIRED})",
+            callback_data=f"sv:{cb}",
+        ),
+        InlineKeyboardButton(
+            text=f"✅ Не спам ({not_spam_count}/{SPAM_VOTES_REQUIRED})",
+            callback_data=f"sn:{cb}",
+        ),
+    ]])
+
+
+async def _dismiss_vote(bot: Bot, config: Settings, vote: SpamVote, key: str) -> None:
+    """Dismiss a vote — no action taken against the user."""
+    _active_votes.pop(key, None)
+    try:
+        await bot.delete_message(vote.chat_id, vote.vote_message_id)
+    except Exception:
+        pass
+    # Notify admin chat
+    name = escape(vote.target_full_name)
+    if vote.target_username:
+        user_display = f"@{escape(vote.target_username)} ({name})"
+    else:
+        user_display = f"{name} (ID: {vote.target_user_id})"
+    try:
+        await bot.send_message(
+            chat_id=config.admin_chat_id,
+            text=(
+                f"✅ <b>Скаргу на спам відхилено</b>\n"
+                f"👤 {user_display}\n"
+                f"🗳 За спам: {len(vote.voters)} / Проти: {len(vote.not_spam_voters)}"
+            ),
+        )
+    except Exception:
+        logger.warning("admin_vote_dismiss_notify_failed")
+    logger.info(
+        "community_vote_dismissed",
+        target_user_id=vote.target_user_id,
+        spam_votes=len(vote.voters),
+        not_spam_votes=len(vote.not_spam_voters),
+    )
 
 
 async def _check_admin(message: Message, bot: Bot) -> bool:
@@ -348,27 +397,15 @@ async def cmd_spam(
     if key in _active_votes:
         # Vote already exists — add voter via the existing post
         vote = _active_votes[key]
-        if message.from_user.id not in vote.voters:
+        if message.from_user.id not in vote.voters and message.from_user.id not in vote.not_spam_voters:
             vote.voters.add(message.from_user.id)
-            count = len(vote.voters)
-            await _update_vote_message(bot, vote, count)
-            if count >= SPAM_VOTES_REQUIRED:
+            await _update_vote_message(bot, vote)
+            if len(vote.voters) >= SPAM_VOTES_REQUIRED:
                 del _active_votes[key]
                 await _execute_community_spam(bot, db, config, vote)
         return
 
     # Create new vote
-    count = 1
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(
-            text=f"Спам ({count}/{SPAM_VOTES_REQUIRED})",
-            callback_data=f"sv:{message.chat.id}:{target_msg.message_id}",
-        )
-    ]])
-    vote_msg = await target_msg.reply(
-        f"🚨 Скарга на спам — {count}/{SPAM_VOTES_REQUIRED} голосів для видалення",
-        reply_markup=keyboard,
-    )
     vote = SpamVote(
         chat_id=message.chat.id,
         target_message_id=target_msg.message_id,
@@ -376,9 +413,14 @@ async def cmd_spam(
         target_username=target_msg.from_user.username,
         target_full_name=target_msg.from_user.full_name,
         target_text=target_msg.text or target_msg.caption,
-        vote_message_id=vote_msg.message_id,
+        vote_message_id=0,
         voters={message.from_user.id},
     )
+    vote_msg = await target_msg.reply(
+        f"🚨 <b>Скарга на спам</b> — проголосуйте, чи це спам:",
+        reply_markup=_build_vote_keyboard(vote),
+    )
+    vote.vote_message_id = vote_msg.message_id
     _active_votes[key] = vote
     logger.info(
         "spam_vote_started",
@@ -403,23 +445,23 @@ async def on_spam_vote(
     vote = _active_votes.get(key)
 
     if not vote:
-        await callback.answer("Голосування завершено")
+        await callback.answer("Це голосування вже завершено")
         return
 
     # Target user can't vote on their own report
     if callback.from_user.id == vote.target_user_id:
-        await callback.answer("Ви не можете голосувати за власне повідомлення")
+        await callback.answer("Не можна голосувати за власне повідомлення")
         return
 
     # Admin click — instant action
     if await is_admin(bot, chat_id, callback.from_user.id):
         del _active_votes[key]
-        await callback.answer("Адмін підтвердив — видаляю")
+        await callback.answer("Спам підтверджено")
         await _execute_community_spam(bot, db, config, vote)
         return
 
-    # Already voted
-    if callback.from_user.id in vote.voters:
+    # Already voted (either side)
+    if callback.from_user.id in vote.voters or callback.from_user.id in vote.not_spam_voters:
         await callback.answer("Ви вже проголосували")
         return
 
@@ -431,22 +473,60 @@ async def on_spam_vote(
         del _active_votes[key]
         await _execute_community_spam(bot, db, config, vote)
     else:
-        await _update_vote_message(bot, vote, count)
+        await _update_vote_message(bot, vote)
 
 
-async def _update_vote_message(bot: Bot, vote: SpamVote, count: int) -> None:
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(
-            text=f"Спам ({count}/{SPAM_VOTES_REQUIRED})",
-            callback_data=f"sv:{vote.chat_id}:{vote.target_message_id}",
-        )
-    ]])
+@router.callback_query(F.data.startswith("sn:"))
+async def on_not_spam_vote(
+    callback: CallbackQuery, bot: Bot, config: Settings,
+) -> None:
+    if not callback.data or not callback.from_user:
+        return
+
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        return
+
+    chat_id, target_msg_id = int(parts[1]), int(parts[2])
+    key = _vote_key(chat_id, target_msg_id)
+    vote = _active_votes.get(key)
+
+    if not vote:
+        await callback.answer("Це голосування вже завершено")
+        return
+
+    if callback.from_user.id == vote.target_user_id:
+        await callback.answer("Не можна голосувати за власне повідомлення")
+        return
+
+    # Admin click — instant dismissal
+    if await is_admin(bot, chat_id, callback.from_user.id):
+        await callback.answer("Скаргу відхилено")
+        await _dismiss_vote(bot, config, vote, key)
+        return
+
+    # Already voted (either side)
+    if callback.from_user.id in vote.voters or callback.from_user.id in vote.not_spam_voters:
+        await callback.answer("Ви вже проголосували")
+        return
+
+    vote.not_spam_voters.add(callback.from_user.id)
+    count = len(vote.not_spam_voters)
+    await callback.answer(f"Голос враховано: {count}/{SPAM_VOTES_REQUIRED}")
+
+    if count >= SPAM_VOTES_REQUIRED:
+        await _dismiss_vote(bot, config, vote, key)
+    else:
+        await _update_vote_message(bot, vote)
+
+
+async def _update_vote_message(bot: Bot, vote: SpamVote) -> None:
     try:
         await bot.edit_message_text(
             chat_id=vote.chat_id,
             message_id=vote.vote_message_id,
-            text=f"🚨 Скарга на спам — {count}/{SPAM_VOTES_REQUIRED} голосів для видалення",
-            reply_markup=keyboard,
+            text=f"🚨 <b>Скарга на спам</b> — проголосуйте, чи це спам:",
+            reply_markup=_build_vote_keyboard(vote),
         )
     except Exception:
         pass
