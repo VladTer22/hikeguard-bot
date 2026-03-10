@@ -9,6 +9,7 @@ import structlog
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
+    Chat,
     ChatPermissions,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -96,6 +97,113 @@ async def handle_spam(
         method=result.method,
         score=result.score,
     )
+
+
+async def handle_channel_spam(
+    message: Message,
+    bot: Bot,
+    db: Database,
+    config: Settings,
+    result: DetectionResult,
+) -> None:
+    """Delete spam from a channel identity and ban the channel."""
+    sender_chat: Chat = message.sender_chat  # type: ignore[assignment]
+    chat_id = message.chat.id
+
+    # Delete the spam message
+    try:
+        deleted = await message.delete()
+        logger.info(
+            "message_delete_result",
+            message_id=message.message_id,
+            chat_id=chat_id,
+            result=deleted,
+        )
+    except Exception as e:
+        logger.warning(
+            "message_delete_failed",
+            message_id=message.message_id,
+            chat_id=chat_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+
+    # Notify the chat (auto-delete after 30 sec)
+    notice = await bot.send_message(chat_id=chat_id, text=random.choice(SPAM_REPLIES))
+    asyncio.create_task(auto_delete_message(bot, chat_id, notice.message_id, 30))
+
+    # Ban the sender channel from posting in this group
+    action = "channel_banned"
+    action_text = "канал забанено"
+    try:
+        await bot.ban_chat_sender_chat(
+            chat_id=chat_id, sender_chat_id=sender_chat.id,
+        )
+    except Exception as e:
+        logger.warning(
+            "channel_ban_failed", sender_chat_id=sender_chat.id, error=str(e),
+        )
+        action = "deleted"
+        action_text = "тільки видалення (не вдалось забанити канал)"
+
+    # Log to DB
+    await SpamLogQueries(db).log_spam(
+        user_id=sender_chat.id,
+        chat_id=chat_id,
+        message_id=message.message_id,
+        detection_method=result.method,
+        caption_text=result.caption_text[:500] if result.caption_text else None,
+        spam_score=result.score,
+        gemini_reason=result.gemini_result.reason if result.gemini_result else None,
+        action_taken=action,
+    )
+
+    # Notify admin chat
+    await _notify_admin_channel_spam(bot, config, sender_chat, result, action, action_text)
+
+    logger.info(
+        "channel_spam_action_taken",
+        sender_chat_id=sender_chat.id,
+        action=action,
+        method=result.method,
+        score=result.score,
+    )
+
+
+async def _notify_admin_channel_spam(
+    bot: Bot,
+    config: Settings,
+    sender_chat: Chat,
+    result: DetectionResult,
+    action: str,
+    action_text: str,
+) -> None:
+    """Send channel spam report to admin chat."""
+    channel_name = escape(sender_chat.title or "Unknown")
+    caption_display = escape(result.caption_text[:200]) if result.caption_text else "—"
+    keywords_str = ", ".join(f"{k}({s})" for k, s in result.matched_keywords)
+    gemini_line = ""
+    if result.gemini_result:
+        gemini_line = (
+            f"\n🤖 Gemini: {escape(result.gemini_result.reason)} "
+            f"(confidence: {result.gemini_result.confidence:.0%})"
+        )
+
+    try:
+        await bot.send_message(
+            chat_id=config.admin_chat_id,
+            text=(
+                f"🚫 <b>Спам від каналу видалено</b>\n"
+                f"📢 {channel_name} (ID: <code>{sender_chat.id}</code>)\n"
+                f"📊 Score: {result.score} | Метод: {result.method}\n"
+                f"📝 Текст: <i>{caption_display}</i>\n"
+                f"🔑 Keywords: {keywords_str or '—'}"
+                f"{gemini_line}\n"
+                f"⚡ Дія: {action_text}"
+            ),
+        )
+    except Exception:
+        logger.warning("admin_notify_failed")
 
 
 async def notify_admins_uncertain(

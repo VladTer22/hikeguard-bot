@@ -18,7 +18,12 @@ from aiogram.types import (
 from config import Settings
 from db.database import Database
 from db.queries import KeywordQueries, SpamLogQueries, UserQueries
-from services.moderation import _apply_punishment, handle_spam, mute_action_keyboard
+from services.moderation import (
+    _apply_punishment,
+    handle_channel_spam,
+    handle_spam,
+    mute_action_keyboard,
+)
 from services.spam_detector import DetectionResult, SpamDetector
 from utils import auto_delete_message, is_admin
 
@@ -53,6 +58,7 @@ class SpamVote:
     voters: set[int] = field(default_factory=set)
     not_spam_voters: set[int] = field(default_factory=set)
     created_at: float = field(default_factory=time.monotonic)
+    target_sender_chat_id: int | None = None
 
 # key: "chat_id:target_message_id"
 _active_votes: dict[str, SpamVote] = {}
@@ -351,7 +357,13 @@ async def cmd_spam(
         return
 
     target_msg = message.reply_to_message
-    if not target_msg or not target_msg.from_user:
+    is_channel_target = (
+        target_msg is not None
+        and target_msg.sender_chat is not None
+        and target_msg.sender_chat.type == "channel"
+    )
+
+    if not target_msg or (not target_msg.from_user and not is_channel_target):
         reply = await message.reply(
             "Використання: /spam — відповіддю на спам-повідомлення"
         )
@@ -359,7 +371,7 @@ async def cmd_spam(
         return
 
     # Don't act on admins
-    if await is_admin(bot, message.chat.id, target_msg.from_user.id):
+    if target_msg.from_user and await is_admin(bot, message.chat.id, target_msg.from_user.id):
         reply = await message.reply("Не можна застосувати до адміністратора")
         _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
         return
@@ -378,18 +390,34 @@ async def cmd_spam(
             method="manual",
             caption_text=target_msg.text or target_msg.caption,
         )
-        await handle_spam(target_msg, bot, db, config, result)
-        logger.info(
-            "admin_manual_spam",
-            target_user_id=target_msg.from_user.id,
-            by=message.from_user.id,
-        )
+        if is_channel_target:
+            await handle_channel_spam(target_msg, bot, db, config, result)
+            logger.info(
+                "admin_manual_channel_spam",
+                sender_chat_id=target_msg.sender_chat.id,
+                by=message.from_user.id,
+            )
+        else:
+            await handle_spam(target_msg, bot, db, config, result)
+            logger.info(
+                "admin_manual_spam",
+                target_user_id=target_msg.from_user.id,
+                by=message.from_user.id,
+            )
         return
 
     # Non-admin — start or join a vote
-    # Can't report your own message
-    if message.from_user.id == target_msg.from_user.id:
+    # Can't report your own message (only for user messages)
+    if not is_channel_target and message.from_user.id == target_msg.from_user.id:
         return
+
+    target_user_id = target_msg.from_user.id if target_msg.from_user else 0
+    target_username = target_msg.from_user.username if target_msg.from_user else None
+    target_full_name = (
+        target_msg.from_user.full_name if target_msg.from_user
+        else target_msg.sender_chat.title if target_msg.sender_chat
+        else "Unknown"
+    )
 
     _cleanup_stale_votes()
     key = _vote_key(message.chat.id, target_msg.message_id)
@@ -409,12 +437,13 @@ async def cmd_spam(
     vote = SpamVote(
         chat_id=message.chat.id,
         target_message_id=target_msg.message_id,
-        target_user_id=target_msg.from_user.id,
-        target_username=target_msg.from_user.username,
-        target_full_name=target_msg.from_user.full_name,
+        target_user_id=target_user_id,
+        target_username=target_username,
+        target_full_name=target_full_name,
         target_text=target_msg.text or target_msg.caption,
         vote_message_id=0,
         voters={message.from_user.id},
+        target_sender_chat_id=target_msg.sender_chat.id if is_channel_target else None,
     )
     vote_msg = await target_msg.reply(
         f"🚨 <b>Скарга на спам</b> — проголосуйте, чи це спам:",
@@ -424,7 +453,8 @@ async def cmd_spam(
     _active_votes[key] = vote
     logger.info(
         "spam_vote_started",
-        target_user_id=target_msg.from_user.id,
+        target_user_id=target_user_id,
+        sender_chat_id=target_msg.sender_chat.id if is_channel_target else None,
         by=message.from_user.id,
     )
 
@@ -607,39 +637,81 @@ async def _execute_community_spam(
     except Exception:
         logger.warning("vote_target_delete_failed", message_id=vote.target_message_id)
 
-    # Punish user + log + notify admin
-    users = UserQueries(db)
-    await users.upsert_user(
-        user_id=vote.target_user_id,
-        username=vote.target_username,
-        full_name=vote.target_full_name,
-    )
-    strikes = await users.increment_strikes(vote.target_user_id)
-    ban_threshold = await users.get_ban_threshold(vote.target_user_id, config.ban_on_strike)
+    if vote.target_sender_chat_id:
+        # Channel spam — ban the sender channel
+        action = "channel_banned"
+        action_text = "канал забанено"
+        try:
+            await bot.ban_chat_sender_chat(
+                chat_id=vote.chat_id,
+                sender_chat_id=vote.target_sender_chat_id,
+            )
+        except Exception as e:
+            logger.warning(
+                "channel_ban_failed",
+                sender_chat_id=vote.target_sender_chat_id,
+                error=str(e),
+            )
+            action = "deleted"
+            action_text = "тільки видалення (не вдалось забанити канал)"
 
-    action, action_text = await _apply_punishment(
-        bot, users, config, vote.chat_id, vote.target_user_id, strikes, ban_threshold,
-    )
+        await SpamLogQueries(db).log_spam(
+            user_id=vote.target_sender_chat_id,
+            chat_id=vote.chat_id,
+            message_id=vote.target_message_id,
+            detection_method="community_vote",
+            caption_text=vote.target_text[:500] if vote.target_text else None,
+            spam_score=0,
+            gemini_reason=None,
+            action_taken=action,
+        )
 
-    await SpamLogQueries(db).log_spam(
-        user_id=vote.target_user_id,
-        chat_id=vote.chat_id,
-        message_id=vote.target_message_id,
-        detection_method="community_vote",
-        caption_text=vote.target_text[:500] if vote.target_text else None,
-        spam_score=0,
-        gemini_reason=None,
-        action_taken=action,
-    )
+        name = escape(vote.target_full_name)
+        user_display = f"📢 {name} (ID: {vote.target_sender_chat_id})"
+        keyboard = None
+    else:
+        # Regular user spam — punish user
+        users = UserQueries(db)
+        await users.upsert_user(
+            user_id=vote.target_user_id,
+            username=vote.target_username,
+            full_name=vote.target_full_name,
+        )
+        strikes = await users.increment_strikes(vote.target_user_id)
+        ban_threshold = await users.get_ban_threshold(
+            vote.target_user_id, config.ban_on_strike,
+        )
+
+        action, action_text = await _apply_punishment(
+            bot, users, config, vote.chat_id, vote.target_user_id,
+            strikes, ban_threshold,
+        )
+
+        await SpamLogQueries(db).log_spam(
+            user_id=vote.target_user_id,
+            chat_id=vote.chat_id,
+            message_id=vote.target_message_id,
+            detection_method="community_vote",
+            caption_text=vote.target_text[:500] if vote.target_text else None,
+            spam_score=0,
+            gemini_reason=None,
+            action_taken=action,
+        )
+
+        name = escape(vote.target_full_name)
+        if vote.target_username:
+            user_display = (
+                f"@{escape(vote.target_username)} ({name}, ID: {vote.target_user_id})"
+            )
+        else:
+            user_display = f"{name} (ID: {vote.target_user_id})"
+        keyboard = (
+            mute_action_keyboard(vote.chat_id, vote.target_user_id)
+            if action == "muted" else None
+        )
 
     # Notify admin
     caption_display = escape(vote.target_text[:200]) if vote.target_text else "—"
-    name = escape(vote.target_full_name)
-    if vote.target_username:
-        user_display = f"@{escape(vote.target_username)} ({name}, ID: {vote.target_user_id})"
-    else:
-        user_display = f"{name} (ID: {vote.target_user_id})"
-    keyboard = mute_action_keyboard(vote.chat_id, vote.target_user_id) if action == "muted" else None
     try:
         await bot.send_message(
             chat_id=config.admin_chat_id,
@@ -658,6 +730,7 @@ async def _execute_community_spam(
     logger.info(
         "community_vote_spam",
         target_user_id=vote.target_user_id,
+        sender_chat_id=vote.target_sender_chat_id,
         voters=len(vote.voters),
         action=action,
     )
