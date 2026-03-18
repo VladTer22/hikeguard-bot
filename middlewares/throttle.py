@@ -26,6 +26,10 @@ class ThrottleMiddleware(BaseMiddleware):
         if not event.from_user:
             return await handler(event, data)
 
+        # Don't throttle group messages — must check every message for spam
+        if event.chat and event.chat.type != "private":
+            return await handler(event, data)
+
         now = time.monotonic()
         user_id = event.from_user.id
 
