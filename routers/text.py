@@ -4,6 +4,7 @@ from aiogram.types import Message
 
 from config import Settings
 from db.database import Database
+from db.queries import UserQueries
 from services.moderation import handle_channel_spam, handle_spam
 from services.spam_detector import DetectionResult, SpamDetector
 from utils import is_admin
@@ -36,6 +37,8 @@ async def handle_text(
         if not message.from_user:
             return
         if await is_admin(bot, message.chat.id, message.from_user.id):
+            return
+        if await UserQueries(db).is_allowed(message.from_user.id):
             return
 
     scoring = spam_detector.scorer.calculate_score(message.text or "")

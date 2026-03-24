@@ -78,6 +78,28 @@ class UserQueries:
         )
         await self._db.db.commit()
 
+    async def is_allowed(self, user_id: int) -> bool:
+        """User is allowed — skip all spam checks."""
+        cursor = await self._db.db.execute(
+            "SELECT 1 FROM users WHERE user_id = ? AND is_allowed = 1",
+            (user_id,),
+        )
+        return await cursor.fetchone() is not None
+
+    async def set_allowed(self, user_id: int) -> None:
+        await self._db.db.execute(
+            "UPDATE users SET is_allowed = 1 WHERE user_id = ?",
+            (user_id,),
+        )
+        await self._db.db.commit()
+
+    async def set_not_allowed(self, user_id: int) -> None:
+        await self._db.db.execute(
+            "UPDATE users SET is_allowed = 0 WHERE user_id = ?",
+            (user_id,),
+        )
+        await self._db.db.commit()
+
     async def set_banned(self, user_id: int) -> None:
         await self._db.db.execute(
             "UPDATE users SET is_banned = 1 WHERE user_id = ?", (user_id,)

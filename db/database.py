@@ -71,6 +71,8 @@ class Database:
         columns = {row[1] for row in await cursor.fetchall()}
         if "ban_on_strike" not in columns:
             await db.execute("ALTER TABLE users ADD COLUMN ban_on_strike INTEGER")
+        if "is_allowed" not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN is_allowed INTEGER DEFAULT 0")
 
     @property
     def db(self) -> aiosqlite.Connection:

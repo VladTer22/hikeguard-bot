@@ -148,6 +148,64 @@ async def cmd_chatid(message: Message, bot: Bot) -> None:
     _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
 
 
+@router.message(Command("allow_all"))
+async def cmd_allow_all(message: Message, bot: Bot, db: Database) -> None:
+    if not await _check_admin(message, bot):
+        return
+
+    if not message.reply_to_message or not message.reply_to_message.from_user:
+        reply = await message.reply(
+            "Використання: /allow_all — відповіддю на повідомлення користувача"
+        )
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+        return
+
+    target = message.reply_to_message.from_user
+    users = UserQueries(db)
+    await users.upsert_user(
+        user_id=target.id, username=target.username, full_name=target.full_name,
+    )
+    await users.set_allowed(target.id)
+
+    display = f"@{target.username}" if target.username else f"ID:{target.id}"
+    reply = await message.reply(f"✅ {display} — перевірка спаму вимкнена назавжди")
+    _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+    logger.info(
+        "admin_allow_all",
+        target_user_id=target.id,
+        by=message.from_user.id,
+    )
+
+
+@router.message(Command("disallow_all"))
+async def cmd_disallow_all(message: Message, bot: Bot, db: Database) -> None:
+    if not await _check_admin(message, bot):
+        return
+
+    if not message.reply_to_message or not message.reply_to_message.from_user:
+        reply = await message.reply(
+            "Використання: /disallow_all — відповіддю на повідомлення користувача"
+        )
+        _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+        return
+
+    target = message.reply_to_message.from_user
+    users = UserQueries(db)
+    await users.upsert_user(
+        user_id=target.id, username=target.username, full_name=target.full_name,
+    )
+    await users.set_not_allowed(target.id)
+
+    display = f"@{target.username}" if target.username else f"ID:{target.id}"
+    reply = await message.reply(f"❌ {display} — перевірка спаму знову увімкнена")
+    _schedule_delete(bot, message.chat.id, reply.message_id, message.message_id, delay=30)
+    logger.info(
+        "admin_disallow_all",
+        target_user_id=target.id,
+        by=message.from_user.id,
+    )
+
+
 @router.message(Command("trust"))
 async def cmd_trust(message: Message, bot: Bot, db: Database) -> None:
     if not await _check_admin(message, bot):
