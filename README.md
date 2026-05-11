@@ -61,6 +61,7 @@ Gemini is optional — the bot works in keywords-only mode without an API key.
 | `/add_word <word> [score]` | Add a custom keyword (default score: 3) |
 | `/remove_word <word>` | Remove a custom keyword |
 | `/chatid` | Show current chat ID and your user ID |
+| `/purge_joins <N>` or `<HH:MM> <HH:MM>` | Mass-ban members who joined within a time window (last N minutes, or UTC range today). Shows preview with count and confirm/cancel buttons; skips already-banned, trusted, and allow-all users. Useful for cleaning up bot raids. |
 
 All admin commands work only for chat administrators (`/spam` also works for regular users via voting). Command messages and bot replies are auto-deleted to keep the chat clean.
 

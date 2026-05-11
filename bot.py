@@ -10,7 +10,7 @@ from config import settings
 from db.database import Database
 from db.queries import GeminiCacheQueries
 from middlewares.throttle import ThrottleMiddleware
-from routers import admin, media, new_member, text
+from routers import admin, media, new_member, purge, text
 from services.cas import CASChecker
 from services.gemini import GeminiClassifier
 from services.keyword_scorer import KeywordScorer
@@ -78,6 +78,7 @@ async def main() -> None:
     dp.message.middleware(ThrottleMiddleware())
 
     dp.include_router(admin.router)
+    dp.include_router(purge.router)
     dp.include_router(new_member.router)
     dp.include_router(media.router)
     dp.include_router(text.router)
