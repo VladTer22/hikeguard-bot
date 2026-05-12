@@ -5,13 +5,12 @@ Flow per event:
 2. If chat is in raid mode → auto-decline, mark source 'raid_mode'.
 3. Else compute score; map to auto-decline / auto-approve / grey-zone.
 4. Auto decisions: call approve/decline Telegram API, persist outcome.
-5. Grey-zone: persist as 'pending', notify admin chat with inline buttons.
-   (Admin-queue callbacks live in this same router — added in Task 5.)
+5. Grey-zone: persist as 'pending', notify admin chat with inline buttons
+   handled by on_admin_approve / on_admin_decline below.
 """
 
 import contextlib
 import time
-from html import escape
 
 import structlog
 from aiogram import Bot, F, Router
@@ -28,7 +27,7 @@ from db.queries import JoinRequestQueries
 from services.cas import CASChecker
 from services.join_scorer import score_profile
 from services.velocity_tracker import VelocityTracker
-from utils import is_admin
+from utils import format_user, is_admin
 
 logger = structlog.get_logger()
 router = Router(name="join_request")
@@ -64,18 +63,13 @@ async def _admin_queue_post(
     score: int,
     signals: dict[str, int],
 ) -> None:
-    if username:
-        display = f"@{escape(username)}"
-    elif full_name:
-        display = escape(full_name)
-    else:
-        display = f"ID:{user_id}"
+    user_display = format_user(user_id, username, full_name)
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
-            text="✅ Approve", callback_data=f"jra:{chat_id}:{user_id}",
+            text="✅ Дозволити", callback_data=f"jra:{chat_id}:{user_id}",
         ),
         InlineKeyboardButton(
-            text="❌ Decline", callback_data=f"jrd:{chat_id}:{user_id}",
+            text="❌ Відхилити", callback_data=f"jrd:{chat_id}:{user_id}",
         ),
     ]])
     try:
@@ -83,9 +77,9 @@ async def _admin_queue_post(
             chat_id=config.admin_chat_id,
             text=(
                 f"🤔 <b>Підозріла заявка на вступ</b>\n"
-                f"👤 {display} (ID: <code>{user_id}</code>)\n"
-                f"Score: <b>{score}</b> "
-                f"(decline≥{config.auto_decline_score}, approve≤{config.auto_approve_score})\n"
+                f"👤 {user_display}\n"
+                f"Оцінка: <b>{score}</b> "
+                f"(поріг відхилення ≥ {config.auto_decline_score})\n"
                 f"Сигнали: <i>{_format_signals(signals)}</i>"
             ),
             reply_markup=kb,
@@ -108,7 +102,7 @@ async def _announce_raid_start(
                 f"🚨 <b>Виявлено флуд join-заявок</b>\n"
                 f"Чат: <code>{chat_id}</code>\n"
                 f"Поріг: {config.raid_threshold}/{config.raid_window_sec}с\n"
-                f"Авто-decline активний {config.raid_mode_minutes} хв."
+                f"Авто-відхилення активне {config.raid_mode_minutes} хв."
             ),
         )
     except Exception:
@@ -239,18 +233,23 @@ async def on_admin_approve(
     try:
         await bot.approve_chat_join_request(chat_id, user_id)
     except Exception as e:
-        await callback.answer(f"Не вдалось approve: {e}")
+        await callback.answer(f"Не вдалось дозволити: {e}"[:200])
         return
 
     updated = await JoinRequestQueries(db).resolve_pending(
         user_id=user_id, chat_id=chat_id,
         decision="approve", decided_by=callback.from_user.id,
     )
-    await callback.answer("Approved" if updated else "Approved (без запису)")
+    await callback.answer("Дозволено" if updated else "Дозволено (без запису в БД)")
+    admin_display = format_user(
+        callback.from_user.id,
+        callback.from_user.username,
+        callback.from_user.full_name,
+    )
     with contextlib.suppress(Exception):
         await callback.message.edit_text(
-            (callback.message.html_text or "") + "\n\n✅ <b>Approved</b> "
-            f"by {callback.from_user.id}"
+            (callback.message.html_text or "")
+            + f"\n\n✅ <b>Заявку дозволено</b> — {admin_display}"
         )
     logger.info(
         "join_request_admin_approve",
@@ -278,18 +277,23 @@ async def on_admin_decline(
     try:
         await bot.decline_chat_join_request(chat_id, user_id)
     except Exception as e:
-        await callback.answer(f"Не вдалось decline: {e}")
+        await callback.answer(f"Не вдалось відхилити: {e}"[:200])
         return
 
     updated = await JoinRequestQueries(db).resolve_pending(
         user_id=user_id, chat_id=chat_id,
         decision="decline", decided_by=callback.from_user.id,
     )
-    await callback.answer("Declined" if updated else "Declined (без запису)")
+    await callback.answer("Відхилено" if updated else "Відхилено (без запису в БД)")
+    admin_display = format_user(
+        callback.from_user.id,
+        callback.from_user.username,
+        callback.from_user.full_name,
+    )
     with contextlib.suppress(Exception):
         await callback.message.edit_text(
-            (callback.message.html_text or "") + "\n\n❌ <b>Declined</b> "
-            f"by {callback.from_user.id}"
+            (callback.message.html_text or "")
+            + f"\n\n❌ <b>Заявку відхилено</b> — {admin_display}"
         )
     logger.info(
         "join_request_admin_decline",
