@@ -46,6 +46,23 @@ CREATE TABLE IF NOT EXISTS gemini_cache (
     reason TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS join_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    chat_id INTEGER NOT NULL,
+    username TEXT,
+    full_name TEXT,
+    request_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    score INTEGER,
+    signals TEXT,
+    decision TEXT,                       -- 'approve' | 'decline' | 'pending'
+    decision_source TEXT,                -- 'auto' | 'admin' | 'raid_mode'
+    decided_by INTEGER,
+    decided_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_join_requests_date ON join_requests(request_date);
+CREATE INDEX IF NOT EXISTS idx_join_requests_decision ON join_requests(decision);
 """
 
 

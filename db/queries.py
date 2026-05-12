@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from db.database import Database
@@ -246,3 +247,87 @@ class GeminiCacheQueries:
         )
         await self._db.db.commit()
         return cursor.rowcount
+
+
+
+class JoinRequestQueries:
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def record(
+        self,
+        *,
+        user_id: int,
+        chat_id: int,
+        username: str | None,
+        full_name: str | None,
+        score: int,
+        signals: dict,
+        decision: str,
+        decision_source: str,
+        decided_by: int | None = None,
+    ) -> None:
+        decided_at = datetime.utcnow() if decision != "pending" else None
+        await self._db.db.execute(
+            """
+            INSERT INTO join_requests
+                (user_id, chat_id, username, full_name, score, signals,
+                 decision, decision_source, decided_by, decided_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id, chat_id, username, full_name, score,
+                json.dumps(signals, ensure_ascii=False),
+                decision, decision_source, decided_by, decided_at,
+            ),
+        )
+        await self._db.db.commit()
+
+    async def resolve_pending(
+        self,
+        *,
+        user_id: int,
+        chat_id: int,
+        decision: str,
+        decided_by: int,
+    ) -> bool:
+        """Update the most recent pending entry for (user_id, chat_id).
+        Returns True if a row was updated, False otherwise."""
+        cursor = await self._db.db.execute(
+            """
+            UPDATE join_requests
+            SET decision = ?, decision_source = 'admin',
+                decided_by = ?, decided_at = CURRENT_TIMESTAMP
+            WHERE id = (
+                SELECT id FROM join_requests
+                WHERE user_id = ? AND chat_id = ? AND decision = 'pending'
+                ORDER BY request_date DESC LIMIT 1
+            )
+            """,
+            (decision, decided_by, user_id, chat_id),
+        )
+        await self._db.db.commit()
+        return cursor.rowcount > 0
+
+    async def get_stats(self, hours: int = 24) -> dict:
+        cursor = await self._db.db.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN decision = 'approve' THEN 1 ELSE 0 END) AS approved,
+                SUM(CASE WHEN decision = 'decline' THEN 1 ELSE 0 END) AS declined,
+                SUM(CASE WHEN decision = 'pending' THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN decision_source = 'raid_mode' THEN 1 ELSE 0 END) AS raid_declined
+            FROM join_requests
+            WHERE request_date >= datetime('now', ?)
+            """,
+            (f"-{hours} hours",),
+        )
+        row = await cursor.fetchone()
+        return {
+            "total": row["total"] or 0,
+            "approved": row["approved"] or 0,
+            "declined": row["declined"] or 0,
+            "pending": row["pending"] or 0,
+            "raid_declined": row["raid_declined"] or 0,
+        }
