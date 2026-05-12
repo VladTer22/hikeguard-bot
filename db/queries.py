@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from db.database import Database
 
@@ -249,7 +249,6 @@ class GeminiCacheQueries:
         return cursor.rowcount
 
 
-
 class JoinRequestQueries:
     def __init__(self, db: Database) -> None:
         self._db = db
@@ -262,12 +261,12 @@ class JoinRequestQueries:
         username: str | None,
         full_name: str | None,
         score: int,
-        signals: dict,
+        signals: dict[str, int],
         decision: str,
         decision_source: str,
         decided_by: int | None = None,
     ) -> None:
-        decided_at = datetime.utcnow() if decision != "pending" else None
+        decided_at = datetime.now(tz=UTC) if decision != "pending" else None
         await self._db.db.execute(
             """
             INSERT INTO join_requests
