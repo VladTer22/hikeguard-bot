@@ -247,9 +247,8 @@ async def on_admin_approve(
     )
     await callback.answer("Approved" if updated else "Approved (без запису)")
     try:
-        await callback.message.edit_reply_markup(reply_markup=None)
         await callback.message.edit_text(
-            (callback.message.text or "") + "\n\n✅ <b>Approved</b> "
+            (callback.message.html_text or "") + "\n\n✅ <b>Approved</b> "
             f"by {callback.from_user.id}"
         )
     except Exception:
@@ -289,9 +288,8 @@ async def on_admin_decline(
     )
     await callback.answer("Declined" if updated else "Declined (без запису)")
     try:
-        await callback.message.edit_reply_markup(reply_markup=None)
         await callback.message.edit_text(
-            (callback.message.text or "") + "\n\n❌ <b>Declined</b> "
+            (callback.message.html_text or "") + "\n\n❌ <b>Declined</b> "
             f"by {callback.from_user.id}"
         )
     except Exception:
