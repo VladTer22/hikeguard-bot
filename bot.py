@@ -8,7 +8,7 @@ from aiogram.enums import ParseMode
 
 from config import settings
 from db.database import Database
-from db.queries import GeminiCacheQueries
+from db.queries import GeminiCacheQueries, JoinRequestQueries
 from middlewares.throttle import ThrottleMiddleware
 from routers import admin, join_request, media, new_member, purge, text
 from services.cas import CASChecker
@@ -43,6 +43,10 @@ async def main() -> None:
     removed = await GeminiCacheQueries(db).cleanup()
     if removed:
         logger.info("gemini_cache_cleaned", removed=removed)
+
+    removed_jr = await JoinRequestQueries(db).cleanup()
+    if removed_jr:
+        logger.info("join_requests_cleaned", removed=removed_jr)
 
     cas_checker = CASChecker()
 

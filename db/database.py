@@ -63,6 +63,8 @@ CREATE TABLE IF NOT EXISTS join_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_join_requests_date ON join_requests(request_date);
 CREATE INDEX IF NOT EXISTS idx_join_requests_decision ON join_requests(decision);
+CREATE INDEX IF NOT EXISTS idx_join_requests_lookup
+    ON join_requests(user_id, chat_id, decision);
 """
 
 

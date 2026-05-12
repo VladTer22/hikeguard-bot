@@ -33,6 +33,12 @@ class CASChecker:
         try:
             session = await self._get_session()
             async with session.get(_CAS_API_URL, params={"user_id": user_id}) as resp:
+                if resp.status == 429:
+                    logger.warning("cas_rate_limited", user_id=user_id)
+                    return False
+                if resp.status >= 500:
+                    logger.warning("cas_upstream_error", user_id=user_id, status=resp.status)
+                    return False
                 data = await resp.json()
                 result = data.get("ok", False)
                 self._put_cache(user_id, result)

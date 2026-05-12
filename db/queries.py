@@ -331,3 +331,19 @@ class JoinRequestQueries:
             "pending": row["pending"] or 0,
             "raid_declined": row["raid_declined"] or 0,
         }
+
+    async def cleanup(self, days: int = 90) -> int:
+        """Delete resolved rows older than `days`. Keeps pending rows
+        (they're either still awaiting admin action or stuck — handle
+        separately if pending counts grow stale).
+        Returns the number of rows deleted."""
+        cursor = await self._db.db.execute(
+            """
+            DELETE FROM join_requests
+            WHERE request_date < datetime('now', ?)
+              AND decision != 'pending'
+            """,
+            (f"-{days} days",),
+        )
+        await self._db.db.commit()
+        return cursor.rowcount
