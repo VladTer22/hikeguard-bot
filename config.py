@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     raid_window_sec: int = 60         # sliding window size
     raid_mode_minutes: int = 20       # how long raid mode stays on after last surge
     auto_decline_score: int = 5       # score >= this → auto-decline
-    auto_approve_score: int = 0       # score <= this → auto-approve, else admin queue
+    auto_approve_score: int = -1      # score <= this → auto-approve, else admin queue
 
     @property
     def gemini_enabled(self) -> bool:
