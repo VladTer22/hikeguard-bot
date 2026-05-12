@@ -36,6 +36,19 @@ _tracker: VelocityTracker | None = None
 _raid_announcements: dict[int, float] = {}
 _RAID_ANNOUNCE_INTERVAL = 600
 
+_SIGNAL_LABELS_UK = {
+    "cas_hit": "у CAS-базі",
+    "cjk_name": "ім'я ієрогліфами",
+    "no_username": "без username",
+    "has_username": "має username",
+    "anglo_numeric_username": "username як у бота",
+    "uid_very_fresh": "акаунт 2025+",
+    "uid_fresh": "акаунт 2024+",
+    "uid_old": "старий акаунт",
+    "cyrillic_name": "кирилиця в імені",
+    "is_premium": "Telegram Premium",
+}
+
 
 def _get_tracker(config: Settings) -> VelocityTracker:
     global _tracker
@@ -49,7 +62,12 @@ def _get_tracker(config: Settings) -> VelocityTracker:
 
 
 def _format_signals(signals: dict[str, int]) -> str:
-    return ", ".join(f"{k}({v:+d})" for k, v in signals.items()) or "—"
+    if not signals:
+        return "—"
+    return ", ".join(
+        f"{_SIGNAL_LABELS_UK.get(k, k)} ({v:+d})"
+        for k, v in signals.items()
+    )
 
 
 async def _admin_queue_post(
