@@ -10,6 +10,7 @@ Flow per event:
 """
 
 import time
+from html import escape
 
 import structlog
 from aiogram import Bot, Router
@@ -56,7 +57,12 @@ async def _admin_queue_post(
     score: int,
     signals: dict[str, int],
 ) -> None:
-    display = f"@{username}" if username else full_name or f"ID:{user_id}"
+    if username:
+        display = f"@{escape(username)}"
+    elif full_name:
+        display = escape(full_name)
+    else:
+        display = f"ID:{user_id}"
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
             text="✅ Approve", callback_data=f"jra:{chat_id}:{user_id}",
@@ -128,7 +134,7 @@ async def on_join_request(
         user_id=user.id,
         username=user.username,
         full_name=user.full_name,
-        is_premium=bool(getattr(user, "is_premium", False)),
+        is_premium=bool(user.is_premium),
         cas_hit=cas_hit,
     )
 
@@ -138,6 +144,7 @@ async def on_join_request(
             await bot.decline_chat_join_request(chat_id, user.id)
         except Exception as e:
             logger.warning("raid_decline_failed", user_id=user.id, error=str(e))
+            return
         await queries.record(
             user_id=user.id, chat_id=chat_id,
             username=user.username, full_name=user.full_name,
@@ -155,6 +162,7 @@ async def on_join_request(
             await bot.decline_chat_join_request(chat_id, user.id)
         except Exception as e:
             logger.warning("auto_decline_failed", user_id=user.id, error=str(e))
+            return
         await queries.record(
             user_id=user.id, chat_id=chat_id,
             username=user.username, full_name=user.full_name,
@@ -172,6 +180,7 @@ async def on_join_request(
             await bot.approve_chat_join_request(chat_id, user.id)
         except Exception as e:
             logger.warning("auto_approve_failed", user_id=user.id, error=str(e))
+            return
         await queries.record(
             user_id=user.id, chat_id=chat_id,
             username=user.username, full_name=user.full_name,
@@ -180,7 +189,7 @@ async def on_join_request(
         )
         logger.info(
             "join_request_auto_approve",
-            user_id=user.id, score=result.score,
+            user_id=user.id, score=result.score, signals=result.signals,
         )
         return
 
@@ -199,5 +208,5 @@ async def on_join_request(
     )
     logger.info(
         "join_request_grey_zone",
-        user_id=user.id, score=result.score,
+        user_id=user.id, score=result.score, signals=result.signals,
     )
