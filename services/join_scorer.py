@@ -15,10 +15,8 @@ _ANGLO_NUMERIC_RE = re.compile(r"^[A-Z][a-zA-Z]+[_-]?[A-Za-z]*\d+$")
 
 
 def _has_cjk(s: str) -> bool:
-    return any(
-        "぀" <= ch <= "鿿" or "゠" <= ch <= "ヿ"
-        for ch in s
-    )
+    # U+3040..U+9FFF covers Hiragana, Katakana, and CJK Unified Ideographs.
+    return any("぀" <= ch <= "鿿" for ch in s)
 
 
 def _has_cyrillic(s: str) -> bool:
@@ -57,6 +55,8 @@ def score_profile(
         if _ANGLO_NUMERIC_RE.match(username):
             signals["anglo_numeric_username"] = 5
 
+    # uid age proxy: >=8B very fresh, >7B fresh, <5B old.
+    # Neutral zone [5B, 7B] gets no signal.
     if user_id >= 8_000_000_000:
         signals["uid_very_fresh"] = 3
     elif user_id > 7_000_000_000:
