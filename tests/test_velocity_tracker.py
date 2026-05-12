@@ -66,4 +66,16 @@ def test_window_eviction_keeps_memory_bounded() -> None:
     for i in range(10000):
         tracker.record(chat_id=1, ts=i)
     tracker.in_raid_mode(chat_id=1, now=10000)
-    assert len(tracker._events[1]) <= 100
+    # window_sec=60, events at ts=0..9999, now=10000 → only ts >= 9940 retained
+    assert len(tracker._events[1]) <= 61
+
+
+def test_event_at_exact_cutoff_is_retained() -> None:
+    """Window is half-open (now - window_sec, now]; event at exact cutoff stays in."""
+    tracker = VelocityTracker(threshold=2, window_sec=60, raid_minutes=20)
+    # Event at ts=0; check at now=60. Cutoff = 60 - 60 = 0.
+    # Eviction condition is events[0] < cutoff → 0 < 0 is False, so event stays.
+    tracker.record(chat_id=1, ts=0)
+    tracker.record(chat_id=1, ts=60)
+    # Two events in window (boundary-inclusive) meets threshold=2 → raid triggers
+    assert tracker.in_raid_mode(chat_id=1, now=60) is True

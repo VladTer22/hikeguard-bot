@@ -2,7 +2,8 @@
 
 Triggers 'raid mode' when burst exceeds threshold. Raid mode lasts
 for raid_minutes after the last triggering event. Independent state
-per chat_id. No I/O — caller injects timestamps for testability.
+per chat_id. No I/O — caller injects timestamps for testability;
+production callers should pass `time.monotonic()`.
 """
 
 from collections import defaultdict, deque
@@ -29,6 +30,8 @@ class VelocityTracker:
         """
         events = self._events[chat_id]
         cutoff = now - self.window_sec
+        # Window is half-open (now - window_sec, now]: an event at exactly
+        # the cutoff is retained.
         while events and events[0] < cutoff:
             events.popleft()
 
