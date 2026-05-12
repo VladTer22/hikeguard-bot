@@ -9,6 +9,7 @@ Flow per event:
    (Admin-queue callbacks live in this same router — added in Task 5.)
 """
 
+import contextlib
 import time
 from html import escape
 
@@ -246,13 +247,11 @@ async def on_admin_approve(
         decision="approve", decided_by=callback.from_user.id,
     )
     await callback.answer("Approved" if updated else "Approved (без запису)")
-    try:
+    with contextlib.suppress(Exception):
         await callback.message.edit_text(
             (callback.message.html_text or "") + "\n\n✅ <b>Approved</b> "
             f"by {callback.from_user.id}"
         )
-    except Exception:
-        pass
     logger.info(
         "join_request_admin_approve",
         user_id=user_id, by=callback.from_user.id,
@@ -287,13 +286,11 @@ async def on_admin_decline(
         decision="decline", decided_by=callback.from_user.id,
     )
     await callback.answer("Declined" if updated else "Declined (без запису)")
-    try:
+    with contextlib.suppress(Exception):
         await callback.message.edit_text(
             (callback.message.html_text or "") + "\n\n❌ <b>Declined</b> "
             f"by {callback.from_user.id}"
         )
-    except Exception:
-        pass
     logger.info(
         "join_request_admin_decline",
         user_id=user_id, by=callback.from_user.id,
