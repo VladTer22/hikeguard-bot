@@ -28,5 +28,10 @@ select = ["E", "W", "F", "I", "B", "UP", "DTZ", "SIM"]
 
 [dependency-groups]
 dev = [
-    "ruff (>=0.15.4,<0.16.0)"
+    "ruff (>=0.15.4,<0.16.0)",
+    "pytest (>=8.0.0)",
+    "pytest-asyncio (>=0.24.0)"
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
