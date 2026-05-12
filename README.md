@@ -38,6 +38,16 @@ Photos and GIF thumbnails that pass keyword scoring are sent to Google Gemini fo
 
 Gemini is optional — the bot works in keywords-only mode without an API key.
 
+## Join-request gate
+
+When the chat is configured with "approve to join" (set in Telegram chat settings → permissions), the bot intercepts every incoming join request and decides automatically:
+
+- **Raid mode** — if more than `RAID_THRESHOLD` requests arrive within `RAID_WINDOW_SEC` seconds, the bot enters raid mode for `RAID_MODE_MINUTES` minutes and declines every request during that window. Designed for the realistic attack shape: bursts of hundreds to thousands of requests in seconds.
+- **Signal scoring** outside raid mode — combines `user_id` age proxy (≥7B/8B = fresh account), username presence and pattern (anglo+digits style is a known botnet signature), full-name script (CJK in a Ukrainian chat is a strong signal), Telegram Premium status, and CAS hit. Score ≥ `AUTO_DECLINE_SCORE` auto-declines; score ≤ `AUTO_APPROVE_SCORE` auto-approves; in-between is posted to the admin chat with inline approve/decline buttons.
+- **Audit trail** — every decision is logged to the `join_requests` table; visible in aggregate via `/status`.
+
+Bot needs admin permission to invite users (`can_invite_users`) for approve/decline to work.
+
 ## Moderation actions
 
 - First spam strike — message deleted, user muted for 1 hour
@@ -99,6 +109,12 @@ python bot.py
 | `MUTE_DURATION_MINUTES` | `60` | Base mute duration in minutes (escalates ×24 per strike: 1h → 24h → …) |
 | `BAN_ON_STRIKE` | `3` | Ban on Nth spam strike (1 = instant ban, 2 = one mute then ban, 3 = two mutes then ban) |
 | `DB_PATH` | `data/hikeguard.db` | SQLite database path |
+| `JOIN_GATE_ENABLED` | `true` | Master switch for the join-request gate |
+| `RAID_THRESHOLD` | `10` | Requests in `RAID_WINDOW_SEC` to trigger raid mode |
+| `RAID_WINDOW_SEC` | `60` | Sliding window size for raid detection |
+| `RAID_MODE_MINUTES` | `20` | Duration of auto-decline mode after raid trigger |
+| `AUTO_DECLINE_SCORE` | `5` | Score threshold for auto-decline |
+| `AUTO_APPROVE_SCORE` | `-1` | Score threshold for auto-approve (else admin queue) |
 
 ## Tech stack
 
