@@ -13,8 +13,13 @@ import time
 from html import escape
 
 import structlog
-from aiogram import Bot, Router
-from aiogram.types import ChatJoinRequest, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram import Bot, F, Router
+from aiogram.types import (
+    CallbackQuery,
+    ChatJoinRequest,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 
 from config import Settings
 from db.database import Database
@@ -22,6 +27,7 @@ from db.queries import JoinRequestQueries
 from services.cas import CASChecker
 from services.join_scorer import score_profile
 from services.velocity_tracker import VelocityTracker
+from utils import is_admin
 
 logger = structlog.get_logger()
 router = Router(name="join_request")
@@ -209,4 +215,88 @@ async def on_join_request(
     logger.info(
         "join_request_grey_zone",
         user_id=user.id, score=result.score, signals=result.signals,
+    )
+
+
+@router.callback_query(F.data.startswith("jra:"))
+async def on_admin_approve(
+    callback: CallbackQuery,
+    bot: Bot,
+    db: Database,
+) -> None:
+    if not callback.data or not callback.from_user or not callback.message:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        return
+    chat_id, user_id = int(parts[1]), int(parts[2])
+
+    if not await is_admin(bot, chat_id, callback.from_user.id):
+        await callback.answer("Тільки адмін чату може вирішувати")
+        return
+
+    try:
+        await bot.approve_chat_join_request(chat_id, user_id)
+    except Exception as e:
+        await callback.answer(f"Не вдалось approve: {e}")
+        return
+
+    updated = await JoinRequestQueries(db).resolve_pending(
+        user_id=user_id, chat_id=chat_id,
+        decision="approve", decided_by=callback.from_user.id,
+    )
+    await callback.answer("Approved" if updated else "Approved (без запису)")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.edit_text(
+            (callback.message.text or "") + "\n\n✅ <b>Approved</b> "
+            f"by {callback.from_user.id}"
+        )
+    except Exception:
+        pass
+    logger.info(
+        "join_request_admin_approve",
+        user_id=user_id, by=callback.from_user.id,
+    )
+
+
+@router.callback_query(F.data.startswith("jrd:"))
+async def on_admin_decline(
+    callback: CallbackQuery,
+    bot: Bot,
+    db: Database,
+) -> None:
+    if not callback.data or not callback.from_user or not callback.message:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        return
+    chat_id, user_id = int(parts[1]), int(parts[2])
+
+    if not await is_admin(bot, chat_id, callback.from_user.id):
+        await callback.answer("Тільки адмін чату може вирішувати")
+        return
+
+    try:
+        await bot.decline_chat_join_request(chat_id, user_id)
+    except Exception as e:
+        await callback.answer(f"Не вдалось decline: {e}")
+        return
+
+    updated = await JoinRequestQueries(db).resolve_pending(
+        user_id=user_id, chat_id=chat_id,
+        decision="decline", decided_by=callback.from_user.id,
+    )
+    await callback.answer("Declined" if updated else "Declined (без запису)")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.edit_text(
+            (callback.message.text or "") + "\n\n❌ <b>Declined</b> "
+            f"by {callback.from_user.id}"
+        )
+    except Exception:
+        pass
+    logger.info(
+        "join_request_admin_decline",
+        user_id=user_id, by=callback.from_user.id,
     )
