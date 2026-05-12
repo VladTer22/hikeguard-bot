@@ -11,6 +11,10 @@ Calibration source: profile of 2255 confirmed bots from raid on 2026-05-11
 import re
 from dataclasses import dataclass
 
+# Matches "FirstnameLastname123"-style usernames common in raid botnets
+# (e.g. Jenny_Santiago50, KruyG268). Calibrated to the 2026-05-11 raid;
+# may occasionally match legitimate short handles, which then route to
+# the admin queue rather than auto-decline.
 _ANGLO_NUMERIC_RE = re.compile(r"^[A-Z][a-zA-Z]+[_-]?[A-Za-z]*\d+$")
 
 

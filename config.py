@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     raid_mode_minutes: int = 20       # how long raid mode stays on after last surge
     auto_decline_score: int = 5       # score >= this → auto-decline
     auto_approve_score: int = -1      # score <= this → auto-approve, else admin queue
+    raid_announce_interval_sec: int = 600   # min seconds between raid alerts to admin
 
     @property
     def gemini_enabled(self) -> bool:

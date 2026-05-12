@@ -292,18 +292,19 @@ class JoinRequestQueries:
     ) -> bool:
         """Update the most recent pending entry for (user_id, chat_id).
         Returns True if a row was updated, False otherwise."""
+        decided_at = datetime.now(tz=UTC)
         cursor = await self._db.db.execute(
             """
             UPDATE join_requests
             SET decision = ?, decision_source = 'admin',
-                decided_by = ?, decided_at = CURRENT_TIMESTAMP
+                decided_by = ?, decided_at = ?
             WHERE id = (
                 SELECT id FROM join_requests
                 WHERE user_id = ? AND chat_id = ? AND decision = 'pending'
                 ORDER BY request_date DESC LIMIT 1
             )
             """,
-            (decision, decided_by, user_id, chat_id),
+            (decision, decided_by, decided_at, user_id, chat_id),
         )
         await self._db.db.commit()
         return cursor.rowcount > 0

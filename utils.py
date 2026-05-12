@@ -13,10 +13,12 @@ async def auto_delete_message(bot: Bot, chat_id: int, message_id: int, delay: in
 
 
 async def is_admin(bot: Bot, chat_id: int, user_id: int) -> bool:
+    """Returns True only if user is verifiably an admin.
+    Fail-closed: any Telegram API error returns False."""
     try:
         member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
         return member.status in ("creator", "administrator")
-    except TelegramBadRequest:
+    except Exception:
         return False
 
 
