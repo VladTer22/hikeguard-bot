@@ -17,7 +17,7 @@ from aiogram.types import (
 
 from config import Settings
 from db.database import Database
-from db.queries import KeywordQueries, SpamLogQueries, UserQueries
+from db.queries import JoinRequestQueries, KeywordQueries, SpamLogQueries, UserQueries
 from services.moderation import (
     _apply_punishment,
     handle_channel_spam,
@@ -800,11 +800,14 @@ async def cmd_status(message: Message, bot: Bot, db: Database) -> None:
         return
 
     spam_log = SpamLogQueries(db)
+    join_q = JoinRequestQueries(db)
 
     stats_24h = await spam_log.get_stats(hours=24)
     stats_7d = await spam_log.get_stats(hours=168)
     stats_all = await spam_log.get_stats()
     top_methods = await spam_log.get_top_methods()
+    join_24h = await join_q.get_stats(hours=24)
+    join_7d = await join_q.get_stats(hours=168)
 
     methods_text = "\n".join(
         f"  • {method}: {count}" for method, count in top_methods
@@ -819,6 +822,11 @@ async def cmd_status(message: Message, bot: Bot, db: Database) -> None:
         f"<b>Бани:</b>\n"
         f"  • 24 год: {stats_24h['bans']}\n"
         f"  • 7 днів: {stats_7d['bans']}\n\n"
+        f"<b>Join-заявки (24 год / 7 днів):</b>\n"
+        f"  • Approve: {join_24h['approved']} / {join_7d['approved']}\n"
+        f"  • Decline: {join_24h['declined']} / {join_7d['declined']}\n"
+        f"  • Raid-decline: {join_24h['raid_declined']} / {join_7d['raid_declined']}\n"
+        f"  • Pending: {join_24h['pending']} / {join_7d['pending']}\n\n"
         f"<b>Методи виявлення:</b>\n{methods_text}"
     )
 
