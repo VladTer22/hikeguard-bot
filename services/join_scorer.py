@@ -75,3 +75,28 @@ def score_profile(
         signals["is_premium"] = -3
 
     return ScoreResult(score=sum(signals.values()), signals=signals)
+
+
+_SIGNAL_LABELS_UK = {
+    "cas_hit": "у CAS-базі",
+    "cjk_name": "ім'я ієрогліфами",
+    "no_username": "без username",
+    "has_username": "має username",
+    "anglo_numeric_username": "username як у бота",
+    "uid_very_fresh": "акаунт 2025+",
+    "uid_fresh": "акаунт 2024+",
+    "uid_old": "старий акаунт",
+    "cyrillic_name": "кирилиця в імені",
+    "is_premium": "Telegram Premium",
+}
+
+
+def format_signals_uk(signals: dict[str, int]) -> str:
+    """Render signals dict as Ukrainian-labeled comma-separated string.
+    Returns "—" if signals is empty. Unknown keys pass through as-is."""
+    if not signals:
+        return "—"
+    return ", ".join(
+        f"{_SIGNAL_LABELS_UK.get(k, k)} ({v:+d})"
+        for k, v in signals.items()
+    )

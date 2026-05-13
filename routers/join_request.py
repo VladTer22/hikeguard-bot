@@ -27,7 +27,7 @@ from config import Settings
 from db.database import Database
 from db.queries import JoinRequestQueries
 from services.cas import CASChecker
-from services.join_scorer import score_profile
+from services.join_scorer import format_signals_uk, score_profile
 from services.velocity_tracker import VelocityTracker
 from utils import format_user, is_admin
 
@@ -36,19 +36,6 @@ router = Router(name="join_request")
 
 _tracker: VelocityTracker | None = None
 _raid_announcements: dict[int, float] = {}
-
-_SIGNAL_LABELS_UK = {
-    "cas_hit": "у CAS-базі",
-    "cjk_name": "ім'я ієрогліфами",
-    "no_username": "без username",
-    "has_username": "має username",
-    "anglo_numeric_username": "username як у бота",
-    "uid_very_fresh": "акаунт 2025+",
-    "uid_fresh": "акаунт 2024+",
-    "uid_old": "старий акаунт",
-    "cyrillic_name": "кирилиця в імені",
-    "is_premium": "Telegram Premium",
-}
 
 
 def _get_tracker(config: Settings) -> VelocityTracker:
@@ -60,15 +47,6 @@ def _get_tracker(config: Settings) -> VelocityTracker:
             raid_minutes=config.raid_mode_minutes,
         )
     return _tracker
-
-
-def _format_signals(signals: dict[str, int]) -> str:
-    if not signals:
-        return "—"
-    return ", ".join(
-        f"{_SIGNAL_LABELS_UK.get(k, k)} ({v:+d})"
-        for k, v in signals.items()
-    )
 
 
 async def _admin_queue_post(
@@ -99,7 +77,7 @@ async def _admin_queue_post(
                 f"👤 {user_display}\n"
                 f"Оцінка: <b>{score}</b> "
                 f"(поріг відхилення ≥ {config.auto_decline_score})\n"
-                f"Сигнали: <i>{_format_signals(signals)}</i>"
+                f"Сигнали: <i>{format_signals_uk(signals)}</i>"
             ),
             reply_markup=kb,
         )

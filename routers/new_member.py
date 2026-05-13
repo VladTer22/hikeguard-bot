@@ -3,13 +3,14 @@ from datetime import UTC, datetime, timedelta
 
 import structlog
 from aiogram import Bot, Router
+from aiogram.exceptions import TelegramRetryAfter
 from aiogram.types import ChatMemberUpdated, ChatPermissions, User
 
 from config import Settings
 from db.database import Database
 from db.queries import SpamLogQueries, UserQueries
 from services.cas import CASChecker
-from services.join_scorer import score_profile
+from services.join_scorer import format_signals_uk, score_profile
 from services.velocity_tracker import VelocityTracker
 from utils import format_user
 
@@ -44,6 +45,26 @@ def _get_tracker(config: Settings) -> VelocityTracker:
             raid_minutes=config.raid_mode_minutes,
         )
     return _tracker
+
+
+async def _ban_silent(bot: Bot, *, chat_id: int, user_id: int) -> bool:
+    """Ban a member, logging any API failure (including RetryAfter).
+    Returns whether the API call succeeded. The DB record is the caller's
+    responsibility and must happen regardless of the API outcome to keep
+    the audit trail consistent."""
+    try:
+        await bot.ban_chat_member(
+            chat_id=chat_id, user_id=user_id, revoke_messages=True,
+        )
+        return True
+    except TelegramRetryAfter as e:
+        logger.warning(
+            "member_ban_flood_wait", user_id=user_id, retry_after=e.retry_after,
+        )
+        return False
+    except Exception as e:
+        logger.warning("member_ban_failed", user_id=user_id, error=str(e))
+        return False
 
 
 async def _record_ban(
@@ -164,20 +185,15 @@ async def on_chat_member_update(
 
         if tracker.in_raid_mode(chat_id=chat_id, now=now):
             await _announce_member_raid(bot, config, chat_id, now)
-            try:
-                await bot.ban_chat_member(
-                    chat_id=chat_id, user_id=user.id, revoke_messages=True,
-                )
-            except Exception as e:
-                logger.warning(
-                    "member_raid_ban_failed", user_id=user.id, error=str(e),
-                )
-                return
+            api_ok = await _ban_silent(bot, chat_id=chat_id, user_id=user.id)
             await _record_ban(
                 db, user=user, chat_id=chat_id,
                 detection_method="join_raid", score=0,
             )
-            logger.info("member_raid_ban", user_id=user.id, chat_id=chat_id)
+            logger.info(
+                "member_raid_ban",
+                user_id=user.id, chat_id=chat_id, api_ok=api_ok,
+            )
             return
 
         result = score_profile(
@@ -188,22 +204,11 @@ async def on_chat_member_update(
             cas_hit=False,  # CAS already checked above; reached here = not banned
         )
         if result.score >= config.member_auto_ban_score:
-            try:
-                await bot.ban_chat_member(
-                    chat_id=chat_id, user_id=user.id, revoke_messages=True,
-                )
-            except Exception as e:
-                logger.warning(
-                    "member_score_ban_failed", user_id=user.id, error=str(e),
-                )
-                return
+            api_ok = await _ban_silent(bot, chat_id=chat_id, user_id=user.id)
             await _record_ban(
                 db, user=user, chat_id=chat_id,
                 detection_method="join_score", score=result.score,
             )
-            signals_text = ", ".join(
-                f"{k}({v:+d})" for k, v in result.signals.items()
-            ) or "—"
             try:
                 await bot.send_message(
                     chat_id=config.admin_chat_id,
@@ -212,7 +217,7 @@ async def on_chat_member_update(
                         f"👤 {format_user(user.id, user.username, user.full_name)}\n"
                         f"Оцінка: <b>{result.score}</b> "
                         f"(поріг ≥ {config.member_auto_ban_score})\n"
-                        f"Сигнали: <i>{signals_text}</i>"
+                        f"Сигнали: <i>{format_signals_uk(result.signals)}</i>"
                     ),
                 )
             except Exception:
@@ -220,6 +225,7 @@ async def on_chat_member_update(
             logger.info(
                 "member_score_ban",
                 user_id=user.id, score=result.score, signals=result.signals,
+                api_ok=api_ok,
             )
             return
 
