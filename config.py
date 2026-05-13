@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     auto_approve_score: int = -1      # score <= this → auto-approve, else admin queue
     raid_announce_interval_sec: int = 600   # min seconds between raid alerts to admin
 
+    # Member gate (instant ban on chat_member event — for public chats where
+    # bots bypass the join_request gate via direct join)
+    member_gate_enabled: bool = True
+    member_auto_ban_score: int = 10   # score >= this → instant ban at join (no quarantine)
+
     @property
     def gemini_enabled(self) -> bool:
         return bool(self.gemini_api_key)
